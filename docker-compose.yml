@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  api:
+    build: .
+    container_name: autotrader_api
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    depends_on:
+      - worker
+
+  worker:
+    build: .
+    container_name: autotrader_worker
+    command: python -m app.worker
+    env_file:
+      - .env
+    restart: unless-stopped
+
