@@ -2,7 +2,7 @@ AutoTrader — Lean, Self‑Hosted Autotrading Service
 
 Purpose
 - Automate entries based on your existing trading setups with tight risk controls.
-- Run on a single VM with Docker Compose. Uses Tradier for brokerage and Polygon for market data.
+- Run on a single VM with Docker Compose. Tradier supplies equity quotes/bars + order routing; Polygon powers options analytics (IV, OI, chains).
 
 Components
 - `api`: FastAPI service with health, provider checks, dry‑run order endpoint, and Prometheus metrics.
@@ -12,6 +12,7 @@ Quick Start (Sandbox)
 1) Copy env template and fill keys
    - `cp .env.example .env`
    - Set: `TRADIER_ACCESS_TOKEN`, `TRADIER_ENV=sandbox`, `TRADIER_ACCOUNT_ID`, `POLYGON_API_KEY`
+   - Optional: `USE_POLYGON_EQUITY=1` once your Polygon tier includes real-time stock aggregates (kept `0` in sandbox to avoid 403 errors)
    - Keep `DRY_RUN=1` until you’re ready to send real orders.
 2) Build and run
    - `docker compose build`

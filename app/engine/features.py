@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from statistics import mean, pstdev
 from typing import Iterable, List, Optional
 
+from ..providers import tradier
+from ..providers.tradier import TradierHTTPError
 from ..providers import polygon
 from ..providers.polygon import PermissionDeniedError
 from . import strategy
@@ -32,6 +35,9 @@ class FeatureSnapshot:
     orderbook_imbalance: Optional[float] = None
 
 
+USE_POLYGON_EQUITY = os.getenv("USE_POLYGON_EQUITY", "0").lower() in {"1", "true", "yes"}
+
+
 class FeatureEngine:
     """Fetches raw data and derives feature snapshots for strategy modules."""
 
@@ -40,14 +46,21 @@ class FeatureEngine:
         self._logger = logging.getLogger("autotrader.engine.features")
 
     async def snapshot(self, symbol: str) -> FeatureSnapshot:
+        bars: List[dict]
         try:
-            bars = await polygon.minute_bars(symbol, minutes=self.lookback_minutes)
-        except PermissionDeniedError:
+            bars = await tradier.minute_bars(symbol, minutes=self.lookback_minutes)
+        except TradierHTTPError as exc:
             self._logger.warning(
-                "Polygon permission denied fetching minute bars for %s; returning empty snapshot",
+                "Tradier error fetching minute bars for %s: %s",
                 symbol,
+                exc,
             )
             bars = []
+        if not bars and USE_POLYGON_EQUITY:
+            try:
+                bars = await polygon.minute_bars(symbol, minutes=self.lookback_minutes)
+            except PermissionDeniedError:
+                bars = []
         if not bars:
             return FeatureSnapshot(
                 symbol=symbol.upper(),

@@ -5,7 +5,6 @@ from typing import Any, Dict, List, Optional
 
 from ..config import settings
 from ..session import SessionPolicy, load_session_config
-from ..providers.polygon import RateLimitError
 from .features import FeatureSnapshot, FeatureEngine
 
 
@@ -121,11 +120,7 @@ class StrategyEngine:
 
         out: List[Dict[str, Any]] = []
         for sym in syms:
-            try:
-                snapshot = await self.feature_engine.snapshot(sym)
-            except RateLimitError:
-                # Reuse most recent data on next pass when cache refresh succeeds.
-                continue
+            snapshot = await self.feature_engine.snapshot(sym)
             for play in self.plays:
                 if not play.allowed_in(current_session):
                     continue

@@ -21,8 +21,30 @@ autotrader_polygon_request_latency = Histogram(
     ("path",),
 )
 
+# AutoTrader Tradier REST metrics for equity data consumption.
+autotrader_tradier_request_total = Counter(
+    "autotrader_tradier_request_total",
+    "AutoTrader Tradier REST requests grouped by path and status.",
+    ("path", "status"),
+)
+
+autotrader_tradier_request_retry_total = Counter(
+    "autotrader_tradier_request_retry_total",
+    "AutoTrader Tradier REST retries grouped by path and reason.",
+    ("path", "reason"),
+)
+
+autotrader_tradier_request_latency = Histogram(
+    "autotrader_tradier_request_latency_seconds",
+    "AutoTrader Tradier REST request latency in seconds by path.",
+    ("path",),
+)
+
 __all__ = [
     "autotrader_polygon_request_total",
     "autotrader_polygon_request_retry_total",
     "autotrader_polygon_request_latency",
+    "autotrader_tradier_request_total",
+    "autotrader_tradier_request_retry_total",
+    "autotrader_tradier_request_latency",
 ]

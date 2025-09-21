@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 from ..config import settings
 from .. import session as session_cfg
 from ..providers import tradier as t
-from ..providers import polygon as p
+from ..providers.tradier import TradierHTTPError
 
 
 def _time_in_window(now_et: datetime, start_str: str, end_str: str) -> bool:
@@ -113,14 +113,23 @@ async def evaluate(signal: Dict[str, Any]) -> Tuple[bool, List[str]]:
     cap = sym_cap if sym_cap is not None else cfg.risk_max_order_notional_usd
     if cap is not None:
         try:
-            lt = await p.last_trade(sym)
-            price = float(lt.get("price") or 0)
+            price = await t.last_trade_price(sym)
+        except TradierHTTPError:
+            price = None
+        if price is None:
+            try:
+                quote = await t.get_quote(sym)
+                qq = (quote.get("quotes") or {}).get("quote")
+                if isinstance(qq, list):
+                    qq = qq[0] if qq else {}
+                price = float((qq or {}).get("last") or 0) or None
+            except Exception:
+                price = None
+        if price:
             qty = int(signal.get("qty") or 0)
             notional = price * qty
             if notional > float(cap):
                 reasons.append(f"Order notional ${notional:.2f} exceeds cap ${cap}")
-        except Exception:
-            pass
 
     # Optional: min cash
     if cfg.min_cash_usd is not None and cfg.tradier_account_id:

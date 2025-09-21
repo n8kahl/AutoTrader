@@ -2,8 +2,8 @@ from __future__ import annotations
 import os, json, time
 from typing import Dict, Any, List, Tuple
 
-from .providers import polygon as poly
 from .providers import tradier as t
+from .providers.tradier import TradierHTTPError
 
 STATE_DIR = os.getenv("STATE_DIR", "/srv/state")
 POS_PATH = os.path.join(STATE_DIR, "positions.json")
@@ -59,11 +59,10 @@ def positions() -> Dict[str, Any]:
 
 async def _price(symbol: str) -> float | None:
     try:
-        lt = await poly.last_trade(symbol)
-        px = float(lt.get("price") or 0) or None
+        px = await t.last_trade_price(symbol)
         if px:
             return px
-    except Exception:
+    except TradierHTTPError:
         pass
     try:
         q = await t.get_quote(symbol)
@@ -109,4 +108,3 @@ async def compute_pnl() -> Dict[str, Any]:
     except Exception:
         pass
     return snap
-

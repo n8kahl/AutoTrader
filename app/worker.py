@@ -4,8 +4,7 @@ from typing import Dict, Any
 
 from .config import settings, symbol_overrides
 from .providers import tradier as t
-from .providers import polygon as poly
-from .providers.polygon import PermissionDeniedError, RateLimitError
+from .providers.tradier import TradierHTTPError
 from .state import load_high_water, save_high_water
 from . import ledger
 from .engine import strategy
@@ -40,9 +39,8 @@ async def scan_once(cfg) -> None:
             tp = ov.get("tp_pct", cfg.tp_pct)
             if sig.get("side", "buy") == "buy" and sp and tp:
                 try:
-                    lt = await poly.last_trade(sig["symbol"])  # last price as base
-                    price_for_bracket = float(lt.get("price") or 0)
-                except Exception:
+                    price_for_bracket = await t.last_trade_price(sig["symbol"])  # delayed last price
+                except TradierHTTPError:
                     price_for_bracket = None
                 if price_for_bracket and price_for_bracket > 0:
                     advanced = "otoco"
@@ -82,12 +80,9 @@ async def scan_once(cfg) -> None:
                 continue
             # Compute EMA cross-down
             try:
-                bars = await poly.minute_bars(sym, minutes=180)
-            except RateLimitError:
-                print(f"[worker] EXIT rate limited fetching bars for {sym}, skipping this pass")
-                continue
-            except PermissionDeniedError:
-                print(f"[worker] EXIT polygon permission denied for {sym}, skipping this pass")
+                bars = await t.minute_bars(sym, minutes=180)
+            except TradierHTTPError as exc:
+                print(f"[worker] EXIT Tradier error fetching bars for {sym}: {exc}")
                 continue
             closes = [float(b.get("c") or 0) for b in bars]
             if len(closes) < 60:
@@ -138,12 +133,11 @@ async def trailing_exit_pass(cfg) -> None:
         qty = int(float(ppos.get("quantity") or 0))
         if qty <= 0:
             continue
-        # Try to resolve price from Polygon then Tradier
+        # Resolve price from Tradier (delayed when using paper accounts)
         price = None
         try:
-            lt = await poly.last_trade(sym)
-            price = float(lt.get("price") or 0) or None
-        except Exception:
+            price = await t.last_trade_price(sym)
+        except TradierHTTPError:
             price = None
         if not price:
             try:

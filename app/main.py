@@ -6,6 +6,7 @@ import os
 from .config import settings
 from .config import symbol_overrides
 from .providers import tradier as t
+from .providers.tradier import TradierHTTPError
 from .engine import risk as riskmod
 from .engine import strategy as strat
 from . import ledger
@@ -349,9 +350,8 @@ async def risk_preview(symbol: str, qty: int = 1, otype: str = "market"):
     # Rough notional using Tradier/Polygon price
     px = None
     try:
-        lt = await strat.poly.last_trade(sig["symbol"])  # type: ignore
-        px = float(lt.get("price") or 0) or None
-    except Exception:
+        px = await t.last_trade_price(sig["symbol"])  # type: ignore
+    except TradierHTTPError:
         px = None
     if not px:
         try:
@@ -382,9 +382,8 @@ async def bracket_preview(symbol: str, qty: int = 1, stop_pct: float | None = No
             px = float(price)
         else:
             try:
-                lt = await strat.poly.last_trade(symbol)
-                px = float(lt.get("price") or 0) or None
-            except Exception:
+                px = await t.last_trade_price(symbol)
+            except TradierHTTPError:
                 px = None
             if not px:
                 try:
@@ -436,9 +435,8 @@ async def bracket_place(body: dict):
             px = None
     if not px:
         try:
-            lt = await strat.poly.last_trade(sym)
-            px = float(lt.get("price") or 0) or None
-        except Exception:
+            px = await t.last_trade_price(sym)
+        except TradierHTTPError:
             px = None
     if not px:
         try:
