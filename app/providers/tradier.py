@@ -45,6 +45,9 @@ async def place_equity_order(
     duration: str = "day",
     price: float | None = None,
     stop: float | None = None,
+    advanced: str | None = None,  # oco|oto|otoco
+    take_profit: float | None = None,
+    client_order_id: str | None = None,
     timeout: float = 10.0,
 ) -> Dict[str, Any]:
     url = f"{_resolve_base()}/accounts/{account_id}/orders"
@@ -65,6 +68,13 @@ async def place_equity_order(
         data["price"] = price
     if stop is not None:
         data["stop"] = stop
+    if advanced:
+        data["advanced"] = advanced
+    if take_profit is not None:
+        # Tradier uses take_profit for bracket target on advanced orders
+        data["take_profit"] = take_profit
+    if client_order_id:
+        data["client_order_id"] = client_order_id
 
     async with httpx.AsyncClient(timeout=timeout) as c:
         r = await c.post(url, headers=headers, data=data)

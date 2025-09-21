@@ -27,6 +27,27 @@ Quick Start (Sandbox)
       -d '{"symbol":"AAPL","side":"buy","qty":1,"type":"market"}' | jq
      ```
 
+Strategy (EMA crossover)
+- Signals: Buy when 1m EMA20 crosses above EMA50 and price is above EMA50; one signal per symbol when the cross happens.
+- Configure symbols and qty in `.env`:
+  - `SYMBOLS=AAPL,MSFT,TSLA,SPY,QQQ`
+  - `ORDER_QTY=1`
+
+Risk Guardrails
+- Time window in America/New_York: `TRADING_WINDOW_START=09:31`, `TRADING_WINDOW_END=15:55`
+- Concurrency: `RISK_MAX_CONCURRENT=3`, `RISK_MAX_OPEN_ORDERS=5`
+- Optional limits: `SYMBOL_WHITELIST`, `SYMBOL_BLACKLIST`, `MIN_CASH_USD`
+- The worker prints reasons when a signal is blocked by risk.
+
+Brackets (optional)
+- Enable a simple bracket when entering longs by setting both:
+  - `STOP_PCT=0.01` and `TP_PCT=0.02` (example = 1% stop, 2% target)
+- The worker sends an advanced OTOCO order using last trade as the base.
+
+Signals preview
+- See what the worker would do and which risk checks would block it:
+  - `curl -s http://YOUR_HOST:8080/api/v1/signals | jq`
+
 Environment
 - `TRADIER_ACCESS_TOKEN` — sandbox or production token
 - `TRADIER_ENV` — `sandbox` or `prod` (selects base URL)
@@ -50,3 +71,8 @@ Order Management (new)
   - `curl -s http://YOUR_HOST:8080/api/v1/positions | jq`
 - Account balances:
   - `curl -s http://YOUR_HOST:8080/api/v1/account/balances | jq`
+
+Flatten positions (safety)
+- Close all or a single symbol at market:
+  - All: `curl -s -X POST "http://YOUR_HOST:8080/api/v1/positions/flatten" | jq`
+  - One: `curl -s -X POST "http://YOUR_HOST:8080/api/v1/positions/flatten?symbol=AAPL" | jq`

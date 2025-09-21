@@ -7,3 +7,4 @@ pydantic-settings==2.5.2
 python-dotenv==1.0.1
 anyio==4.4.0
 apscheduler==3.10.4
+tzdata==2024.1

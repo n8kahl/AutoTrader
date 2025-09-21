@@ -5,6 +5,8 @@ import os
 
 from .config import settings
 from .providers import tradier as t
+from .engine import risk as riskmod
+from .engine import strategy as strat
 
 app = FastAPI(title="AutoTrader API")
 
@@ -117,3 +119,41 @@ async def balances():
         return {"ok": True, "balances": j}
     except Exception as e:
         return {"ok": False, "error": type(e).__name__, "detail": str(e)}
+
+
+@app.post("/api/v1/positions/flatten")
+async def flatten(symbol: str | None = None):
+    cfg = settings()
+    if not cfg.tradier_account_id:
+        return {"ok": False, "error": "TRADIER_ACCOUNT_ID is not set"}
+    snap = await riskmod.portfolio_snapshot()
+    positions = (snap.get("positions") or [])
+    targets = [p for p in positions if float(p.get("quantity") or 0) != 0]
+    if symbol:
+        s = symbol.upper()
+        targets = [p for p in targets if (p.get("symbol") or "").upper() == s]
+    results = []
+    for p in targets:
+        sym = (p.get("symbol") or "").upper()
+        qty = int(abs(float(p.get("quantity") or 0)))
+        side = "sell" if float(p.get("quantity") or 0) > 0 else "buy_to_cover"
+        if cfg.dry_run:
+            results.append({"symbol": sym, "qty": qty, "side": side, "dry_run": True})
+            continue
+        try:
+            resp = await t.place_equity_order(cfg.tradier_account_id, sym, side, qty, order_type="market", duration="day")
+            results.append({"symbol": sym, "qty": qty, "side": side, "resp": resp})
+        except Exception as e:
+            results.append({"symbol": sym, "error": type(e).__name__, "detail": str(e)})
+    return {"ok": True, "actions": results}
+
+
+@app.get("/api/v1/signals")
+async def signals_preview():
+    cfg = settings()
+    sigs = await strat.ema_crossover_signals()
+    out = []
+    for s in sigs:
+        ok, reasons = await riskmod.evaluate(s)
+        out.append({"signal": s, "pass": ok, "reasons": reasons})
+    return {"ok": True, "signals": out}

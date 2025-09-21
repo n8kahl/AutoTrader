@@ -1,0 +1,97 @@
+from __future__ import annotations
+from typing import Dict, Any, List, Tuple
+from datetime import datetime, time as dtime
+from zoneinfo import ZoneInfo
+
+from ..config import settings
+from ..providers import tradier as t
+from ..providers import polygon as p
+
+
+def _time_in_window(now_et: datetime, start_str: str, end_str: str) -> bool:
+    def _parse(s: str) -> dtime:
+        hh, mm = [int(x) for x in (s or "").split(":", 1)]
+        return dtime(hour=hh, minute=mm)
+    start = _parse(start_str)
+    end = _parse(end_str)
+    return start <= now_et.time() <= end
+
+
+async def portfolio_snapshot() -> Dict[str, Any]:
+    cfg = settings()
+    acct = cfg.tradier_account_id
+    out: Dict[str, Any] = {"positions": [], "open_orders": []}
+    if not acct:
+        return out
+    try:
+        pos = await t.list_positions(acct)
+        out["positions"] = (pos.get("positions") or {}).get("position") or []
+    except Exception:
+        pass
+    try:
+        oo = await t.list_orders(acct, status="open")
+        raw = (oo.get("orders") or {}).get("order") or []
+        out["open_orders"] = raw if isinstance(raw, list) else [raw]
+    except Exception:
+        pass
+    return out
+
+
+async def evaluate(signal: Dict[str, Any]) -> Tuple[bool, List[str]]:
+    cfg = settings()
+    reasons: List[str] = []
+
+    # Trading window (America/New_York)
+    now_et = datetime.now(ZoneInfo("America/New_York"))
+    if not _time_in_window(now_et, cfg.trading_window_start, cfg.trading_window_end):
+        reasons.append(f"Outside trading window {cfg.trading_window_start}-{cfg.trading_window_end} ET")
+
+    # Symbols allow/deny
+    sym = (signal.get("symbol") or "").upper()
+    if cfg.symbol_blacklist:
+        bl = {s.strip().upper() for s in cfg.symbol_blacklist.split(",") if s.strip()}
+        if sym in bl:
+            reasons.append("Symbol blacklisted")
+    if cfg.symbol_whitelist:
+        wl = {s.strip().upper() for s in cfg.symbol_whitelist.split(",") if s.strip()}
+        if sym not in wl:
+            reasons.append("Symbol not in whitelist")
+
+    snap = await portfolio_snapshot()
+    open_pos = [p for p in (snap.get("positions") or []) if float(p.get("quantity") or 0) != 0]
+    open_orders = (snap.get("open_orders") or [])
+
+    # Concurrency limits
+    if len(open_pos) >= cfg.risk_max_concurrent:
+        reasons.append(f"Max concurrent positions reached: {cfg.risk_max_concurrent}")
+    if len(open_orders) >= cfg.risk_max_open_orders:
+        reasons.append(f"Max open orders reached: {cfg.risk_max_open_orders}")
+
+    # Per-symbol limits
+    same_sym_pos = [x for x in open_pos if (x.get("symbol") or "").upper() == sym]
+    if len(same_sym_pos) >= cfg.risk_max_positions_per_symbol:
+        reasons.append(f"Max positions for {sym} reached: {cfg.risk_max_positions_per_symbol}")
+
+    # Notional cap
+    if cfg.risk_max_order_notional_usd is not None:
+        try:
+            lt = await p.last_trade(sym)
+            price = float(lt.get("price") or 0)
+            qty = int(signal.get("qty") or 0)
+            notional = price * qty
+            if notional > float(cfg.risk_max_order_notional_usd):
+                reasons.append(f"Order notional ${notional:.2f} exceeds cap ${cfg.risk_max_order_notional_usd}")
+        except Exception:
+            pass
+
+    # Optional: min cash
+    if cfg.min_cash_usd is not None and cfg.tradier_account_id:
+        try:
+            bal = await t.get_balances(cfg.tradier_account_id)
+            cash = ((bal.get("balances") or {}).get("cash") or {}).get("cash_available")
+            if cash is not None and float(cash) < float(cfg.min_cash_usd):
+                reasons.append(f"Cash below minimum ${cfg.min_cash_usd}")
+        except Exception:
+            pass
+
+    return (len(reasons) == 0), reasons
