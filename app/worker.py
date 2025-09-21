@@ -2,7 +2,7 @@ from __future__ import annotations
 import asyncio, time
 from typing import Dict, Any
 
-from .config import settings
+from .config import settings, symbol_overrides
 from .providers import tradier as t
 from .providers import polygon as poly
 from .engine import strategy
@@ -31,7 +31,11 @@ async def scan_once(cfg) -> None:
             take_profit = None
             price_for_bracket = None
             # Apply bracket if configured and this is a buy
-            if sig.get("side", "buy") == "buy" and cfg.stop_pct and cfg.tp_pct:
+            ov = symbol_overrides(sig["symbol"])
+            qty = int(ov.get("qty", sig.get("qty", 1)))
+            sp = ov.get("stop_pct", cfg.stop_pct)
+            tp = ov.get("tp_pct", cfg.tp_pct)
+            if sig.get("side", "buy") == "buy" and sp and tp:
                 try:
                     lt = await poly.last_trade(sig["symbol"])  # last price as base
                     price_for_bracket = float(lt.get("price") or 0)
@@ -39,14 +43,14 @@ async def scan_once(cfg) -> None:
                     price_for_bracket = None
                 if price_for_bracket and price_for_bracket > 0:
                     advanced = "otoco"
-                    stop = round(price_for_bracket * (1 - float(cfg.stop_pct)), 2)
-                    take_profit = round(price_for_bracket * (1 + float(cfg.tp_pct)), 2)
+                    stop = round(price_for_bracket * (1 - float(sp)), 2)
+                    take_profit = round(price_for_bracket * (1 + float(tp)), 2)
 
             resp = await t.place_equity_order(
                 account_id=cfg.tradier_account_id,
                 symbol=sig["symbol"],
                 side=sig.get("side", "buy"),
-                qty=int(sig.get("qty", 1)),
+                qty=qty,
                 order_type=sig.get("type", "market"),
                 duration=sig.get("duration", "day"),
                 price=sig.get("price"),

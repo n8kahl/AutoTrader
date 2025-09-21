@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 from pydantic import Field
+import os, re
 
 
 class Settings(BaseSettings):
@@ -45,3 +46,39 @@ class Settings(BaseSettings):
 
 def settings() -> Settings:
     return Settings()  # loads from environment/.env
+
+
+_SYM_RE = re.compile(r"[^A-Z0-9]+")
+
+
+def _sym_key(symbol: str) -> str:
+    return _SYM_RE.sub("", (symbol or "").upper())
+
+
+def symbol_overrides(symbol: str) -> dict:
+    """Read per-symbol overrides from environment.
+    Supported vars (decimal percentages for pcts):
+      - QTY_<SYM>
+      - STOP_<SYM>
+      - TP_<SYM>
+      - TRAIL_<SYM>
+      - TRAIL_ACT_<SYM>
+    Returns {qty?, stop_pct?, tp_pct?, trail_pct?, trail_activation_pct?}
+    """
+    s = _sym_key(symbol)
+    out: dict = {}
+    v = os.getenv(f"QTY_{s}")
+    if v is not None and str(v).strip() != "":
+        try:
+            out["qty"] = int(float(v))
+        except Exception:
+            pass
+    for name, key in [(f"STOP_{s}", "stop_pct"), (f"TP_{s}", "tp_pct"), (f"TRAIL_{s}", "trail_pct"), (f"TRAIL_ACT_{s}", "trail_activation_pct")]:
+        v = os.getenv(name)
+        if v is None or str(v).strip() == "":
+            continue
+        try:
+            out[key] = float(v)
+        except Exception:
+            continue
+    return out

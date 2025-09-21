@@ -49,6 +49,15 @@ Signals preview
 - See what the worker would do and which risk checks would block it:
   - `curl -s http://YOUR_HOST:8080/api/v1/signals | jq`
 
+Per‑symbol overrides
+- Set env vars for specific symbols (decimals for pct values):
+  - `QTY_AAPL=2`
+  - `STOP_AAPL=0.0125` (1.25%)
+  - `TP_AAPL=0.02` (2%)
+  - `TRAIL_AAPL=0.01`, `TRAIL_ACT_AAPL=0.01`
+- Check effective config:
+  - `curl -s "http://YOUR_HOST:8080/api/v1/config/effective?symbol=AAPL" | jq`
+
 Cancel helpers
 - Cancel all open orders (optionally for one symbol):
   - All: `curl -s -X POST "http://YOUR_HOST:8080/api/v1/orders/cancel_all" | jq`

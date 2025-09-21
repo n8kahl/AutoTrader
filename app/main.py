@@ -4,6 +4,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 import os
 
 from .config import settings
+from .config import symbol_overrides
 from .providers import tradier as t
 from .engine import risk as riskmod
 from .engine import strategy as strat
@@ -181,6 +182,29 @@ async def flatten(symbol: str | None = None):
     return {"ok": True, "actions": results}
 
 
+@app.get("/api/v1/config/effective")
+async def config_effective(symbol: str | None = None):
+    cfg = settings()
+    base = {
+        "default_qty": cfg.default_qty,
+        "stop_pct": cfg.stop_pct,
+        "tp_pct": cfg.tp_pct,
+        "trail_pct": cfg.trail_pct,
+        "trail_activation_pct": cfg.trail_activation_pct,
+        "strategy_interval": cfg.strategy_interval,
+        "lookback_min": cfg.lookback_min,
+        "lookback_days": cfg.lookback_days,
+        "risk_max_concurrent": cfg.risk_max_concurrent,
+        "risk_max_open_orders": cfg.risk_max_open_orders,
+    }
+    if symbol:
+        ov = symbol_overrides(symbol)
+        eff = base.copy()
+        eff.update({k: v for k, v in ov.items() if v is not None})
+        return {"ok": True, "symbol": symbol.upper(), "effective": eff, "overrides": ov}
+    return {"ok": True, "effective": base}
+
+
 @app.get("/api/v1/signals")
 async def signals_preview():
     try:
@@ -197,8 +221,10 @@ async def signals_preview():
 @app.get("/api/v1/bracket/preview")
 async def bracket_preview(symbol: str, qty: int = 1, stop_pct: float | None = None, tp_pct: float | None = None, price: float | None = None):
     cfg = settings()
-    stop_p = stop_pct if stop_pct is not None else cfg.stop_pct
-    tp_p = tp_pct if tp_pct is not None else cfg.tp_pct
+    ov = symbol_overrides(symbol)
+    qty = int(ov.get("qty", qty))
+    stop_p = stop_pct if stop_pct is not None else ov.get("stop_pct", cfg.stop_pct)
+    tp_p = tp_pct if tp_pct is not None else ov.get("tp_pct", cfg.tp_pct)
     if stop_p is None or tp_p is None:
         return {"ok": False, "error": "Missing stop_pct or tp_pct (or STOP_PCT/TP_PCT not set)"}
     # Resolve price: explicit param > Polygon snapshot > Tradier quote > error
@@ -237,7 +263,8 @@ async def bracket_preview(symbol: str, qty: int = 1, stop_pct: float | None = No
 async def bracket_place(body: dict):
     cfg = settings()
     sym = (body.get("symbol") or "").upper()
-    qty = int(body.get("qty") or cfg.default_qty)
+    ov = symbol_overrides(sym)
+    qty = int(body.get("qty") or ov.get("qty") or cfg.default_qty)
     stop_pct = body.get("stop_pct")
     tp_pct = body.get("tp_pct")
     price = body.get("price")  # optional price reference for stop/tp calc; also used for limit
@@ -247,8 +274,8 @@ async def bracket_place(body: dict):
     if not sym:
         return {"ok": False, "error": "symbol is required"}
     # Resolve pct from env if not provided
-    sp = float(stop_pct) if stop_pct is not None else (cfg.stop_pct if cfg.stop_pct is not None else None)
-    tp = float(tp_pct) if tp_pct is not None else (cfg.tp_pct if cfg.tp_pct is not None else None)
+    sp = float(stop_pct) if stop_pct is not None else (ov.get("stop_pct") if ov.get("stop_pct") is not None else (cfg.stop_pct if cfg.stop_pct is not None else None))
+    tp = float(tp_pct) if tp_pct is not None else (ov.get("tp_pct") if ov.get("tp_pct") is not None else (cfg.tp_pct if cfg.tp_pct is not None else None))
     if sp is None or tp is None:
         return {"ok": False, "error": "Missing stop_pct/tp_pct or STOP_PCT/TP_PCT not set"}
 
