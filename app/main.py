@@ -8,6 +8,7 @@ from .config import symbol_overrides
 from .providers import tradier as t
 from .engine import risk as riskmod
 from .engine import strategy as strat
+from . import ledger
 
 app = FastAPI(title="AutoTrader API")
 
@@ -69,6 +70,7 @@ async def orders(status: str | None = None):
         return {"ok": False, "error": "TRADIER_ACCOUNT_ID is not set"}
     try:
         j = await t.list_orders(cfg.tradier_account_id, status=status)
+        ledger.event("orders_list", data={"status": status, "count": len(((j.get("orders") or {}).get("order") or [] if isinstance((j.get("orders") or {}).get("order"), list) else [ (j.get("orders") or {}).get("order") ]) if (j.get("orders") or {}).get("order") else [])})
         return {"ok": True, "orders": j}
     except Exception as e:
         return {"ok": False, "error": type(e).__name__, "detail": str(e)}
@@ -96,7 +98,9 @@ async def orders_cancel_all(symbol: str | None = None, status: str = "open"):
                 results.append({"id": oid, "skipped": True, "status": st})
                 continue
             try:
+                ledger.event("order_cancel_req", data={"order_id": oid})
                 r = await t.cancel_order(cfg.tradier_account_id, str(oid))
+                ledger.event("order_cancel_resp", data={"order_id": oid, "resp": r})
                 results.append({"id": oid, "canceled": True, "resp": r})
             except Exception as e:
                 results.append({"id": oid, "error": type(e).__name__, "detail": str(e)})
@@ -153,6 +157,7 @@ async def order_get(order_id: str):
         return {"ok": False, "error": "TRADIER_ACCOUNT_ID is not set"}
     try:
         j = await t.get_order(cfg.tradier_account_id, order_id)
+        ledger.event("order_status", data={"id": order_id, "status": (j.get("order") or {}).get("status")})
         return {"ok": True, "order": j}
     except Exception as e:
         return {"ok": False, "error": type(e).__name__, "detail": str(e)}
@@ -163,11 +168,13 @@ async def order_cancel(order_id: str):
     cfg = settings()
     if not cfg.tradier_account_id:
         return {"ok": False, "error": "TRADIER_ACCOUNT_ID is not set"}
-    try:
-        j = await t.cancel_order(cfg.tradier_account_id, order_id)
-        return {"ok": True, "canceled": j}
-    except Exception as e:
-        return {"ok": False, "error": type(e).__name__, "detail": str(e)}
+        try:
+            ledger.event("order_cancel_req", data={"order_id": order_id})
+            j = await t.cancel_order(cfg.tradier_account_id, order_id)
+            ledger.event("order_cancel_resp", data={"order_id": order_id, "resp": j})
+            return {"ok": True, "canceled": j}
+        except Exception as e:
+            return {"ok": False, "error": type(e).__name__, "detail": str(e)}
 
 
 @app.get("/api/v1/positions")
@@ -217,6 +224,7 @@ async def flatten(symbol: str | None = None):
             continue
         try:
             resp = await t.place_equity_order(cfg.tradier_account_id, sym, side, qty, order_type="market", duration="day")
+            ledger.event("order_placed", data={"id": (resp.get("order") or {}).get("id"), "symbol": sym, "side": side, "qty": qty})
             results.append({"symbol": sym, "qty": qty, "side": side, "resp": resp})
         except Exception as e:
             results.append({"symbol": sym, "error": type(e).__name__, "detail": str(e)})
@@ -396,6 +404,35 @@ async def bracket_place(body: dict):
             advanced="otoco",
             take_profit=take_profit,
         )
+        ledger.event("order_placed", data={"id": (resp.get("order") or {}).get("id"), "symbol": sym, "side": "buy", "qty": qty, "advanced": "otoco", "stop": stop, "tp": take_profit})
         return {"ok": True, "dry_run": False, "resp": resp}
     except Exception as e:
         return {"ok": False, "error": type(e).__name__, "detail": str(e)}
+
+
+@app.get("/api/v1/ledger/events")
+async def ledger_events(limit: int = 200):
+    return {"ok": True, "events": ledger.read_events(limit=limit)}
+
+
+@app.get("/api/v1/ledger/orders")
+async def ledger_orders(limit: int = 200):
+    return {"ok": True, "orders": ledger.summarize_orders()[: int(limit)]}
+
+
+@app.post("/api/v1/ledger/reconcile")
+async def ledger_reconcile(limit: int = 100):
+    cfg = settings()
+    if not cfg.tradier_account_id:
+        return {"ok": False, "error": "TRADIER_ACCOUNT_ID is not set"}
+    ids = ledger.known_order_ids()
+    updated = []
+    for oid in ids[: int(limit)]:
+        try:
+            j = await t.get_order(cfg.tradier_account_id, oid)
+            st = (j.get("order") or {}).get("status")
+            ledger.event("order_status", data={"id": oid, "status": st, "raw": j})
+            updated.append({"id": oid, "status": st})
+        except Exception as e:
+            updated.append({"id": oid, "error": type(e).__name__})
+    return {"ok": True, "updated": updated, "count": len(updated)}

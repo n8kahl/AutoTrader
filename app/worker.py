@@ -6,6 +6,7 @@ from .config import settings, symbol_overrides
 from .providers import tradier as t
 from .providers import polygon as poly
 from .state import load_high_water, save_high_water
+from . import ledger
 from .engine import strategy
 from .engine import risk
 
@@ -60,6 +61,11 @@ async def scan_once(cfg) -> None:
                 take_profit=take_profit,
             )
             print("[worker] order response:", resp)
+            try:
+                oid = (resp.get("order") or {}).get("id")
+                ledger.event("order_placed", data={"id": oid, "symbol": sig["symbol"], "side": sig.get("side", "buy"), "qty": qty, "advanced": advanced, "stop": stop, "tp": take_profit})
+            except Exception:
+                pass
         except Exception as e:
             print("[worker] order error:", type(e).__name__, str(e))
 
@@ -86,15 +92,20 @@ async def scan_once(cfg) -> None:
                     print(f"[worker] EXIT DRY_RUN sell {qty} {sym} — EMA20 cross down")
                     continue
                 try:
-                    resp = await t.place_equity_order(
-                        account_id=cfg.tradier_account_id,
-                        symbol=sym,
-                        side="sell",
-                        qty=qty,
-                        order_type="market",
-                        duration="day",
-                    )
-                    print("[worker] EXIT order response:", resp)
+                resp = await t.place_equity_order(
+                    account_id=cfg.tradier_account_id,
+                    symbol=sym,
+                    side="sell",
+                    qty=qty,
+                    order_type="market",
+                    duration="day",
+                )
+                print("[worker] EXIT order response:", resp)
+                try:
+                    oid = (resp.get("order") or {}).get("id")
+                    ledger.event("order_placed", data={"id": oid, "symbol": sym, "side": "sell", "qty": qty, "reason": "ema_cross_down"})
+                except Exception:
+                    pass
                 except Exception as e:
                     print("[worker] EXIT order error:", type(e).__name__, str(e))
     except Exception as e:
