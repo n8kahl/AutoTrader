@@ -1,0 +1,28 @@
+from __future__ import annotations
+
+from prometheus_client import Counter, Histogram
+
+# AutoTrader-specific Polygon REST request counters.
+autotrader_polygon_request_total = Counter(
+    "autotrader_polygon_request_total",
+    "AutoTrader Polygon REST requests grouped by path and status.",
+    ("path", "status"),
+)
+
+autotrader_polygon_request_retry_total = Counter(
+    "autotrader_polygon_request_retry_total",
+    "AutoTrader Polygon REST retries grouped by path and reason.",
+    ("path", "reason"),
+)
+
+autotrader_polygon_request_latency = Histogram(
+    "autotrader_polygon_request_latency_seconds",
+    "AutoTrader Polygon REST request latency in seconds by path.",
+    ("path",),
+)
+
+__all__ = [
+    "autotrader_polygon_request_total",
+    "autotrader_polygon_request_retry_total",
+    "autotrader_polygon_request_latency",
+]
