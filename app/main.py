@@ -195,22 +195,39 @@ async def signals_preview():
 
 
 @app.get("/api/v1/bracket/preview")
-async def bracket_preview(symbol: str, qty: int = 1, stop_pct: float | None = None, tp_pct: float | None = None):
+async def bracket_preview(symbol: str, qty: int = 1, stop_pct: float | None = None, tp_pct: float | None = None, price: float | None = None):
     cfg = settings()
     stop_p = stop_pct if stop_pct is not None else cfg.stop_pct
     tp_p = tp_pct if tp_pct is not None else cfg.tp_pct
     if stop_p is None or tp_p is None:
         return {"ok": False, "error": "Missing stop_pct or tp_pct (or STOP_PCT/TP_PCT not set)"}
+    # Resolve price: explicit param > Polygon snapshot > Tradier quote > error
     try:
-        lt = await strat.poly.last_trade(symbol)
-        price = float(lt.get("price") or 0)
-        if not price:
-            return {"ok": False, "error": "No price"}
-        stop = round(price * (1 - float(stop_p)), 2)
-        tp = round(price * (1 + float(tp_p)), 2)
-        notional = round(price * qty, 2)
+        px = None
+        if price is not None and float(price) > 0:
+            px = float(price)
+        else:
+            try:
+                lt = await strat.poly.last_trade(symbol)
+                px = float(lt.get("price") or 0) or None
+            except Exception:
+                px = None
+            if not px:
+                try:
+                    q = await t.get_quote(symbol)
+                    qq = (q.get("quotes") or {}).get("quote")
+                    if isinstance(qq, list):
+                        qq = qq[0] if qq else {}
+                    px = float((qq or {}).get("last") or 0) or None
+                except Exception:
+                    px = None
+        if not px:
+            return {"ok": False, "error": "No price available (Polygon/Tradier denied or empty). Optionally pass ?price=..."}
+        stop = round(px * (1 - float(stop_p)), 2)
+        tp = round(px * (1 + float(tp_p)), 2)
+        notional = round(px * qty, 2)
         sig = {"symbol": symbol.upper(), "side": "buy", "qty": qty, "type": "market"}
         ok, reasons = await riskmod.evaluate(sig)
-        return {"ok": True, "price": price, "qty": qty, "notional": notional, "stop": stop, "take_profit": tp, "risk_pass": ok, "risk_reasons": reasons}
+        return {"ok": True, "price": px, "qty": qty, "notional": notional, "stop": stop, "take_profit": tp, "risk_pass": ok, "risk_reasons": reasons}
     except Exception as e:
         return {"ok": False, "error": type(e).__name__, "detail": str(e)}
