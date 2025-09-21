@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     lookback_min: int = Field(default=180, alias="LOOKBACK_MIN")
     lookback_days: int = Field(default=120, alias="LOOKBACK_DAYS")
 
+    # Session policies
+    session_policy_file: str = Field(default="session_policies.yaml", alias="SESSION_POLICY_FILE")
+
     # Risk Guardrails
     risk_max_concurrent: int = Field(default=3, alias="RISK_MAX_CONCURRENT")
     risk_max_open_orders: int = Field(default=5, alias="RISK_MAX_OPEN_ORDERS")

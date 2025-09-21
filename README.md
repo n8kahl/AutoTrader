@@ -40,6 +40,11 @@ Risk Guardrails
 - Optional limits: `SYMBOL_WHITELIST`, `SYMBOL_BLACKLIST`, `MIN_CASH_USD`
 - The worker prints reasons when a signal is blocked by risk.
 
+Session Policies (advanced)
+- Define time-of-day playbooks and setup gates in `session_policies.yaml` (copy from `session_policies.example.yaml`).
+- Point to a custom file with `SESSION_POLICY_FILE=/path/to/policies.yaml` if desired.
+- When present, the risk engine uses the active session window instead of the global trading window settings.
+
 Brackets (optional)
 - Enable a simple bracket when entering longs by setting both:
   - `STOP_PCT=0.01` and `TP_PCT=0.02` (example = 1% stop, 2% target)

@@ -5,6 +5,7 @@ from datetime import datetime, time as dtime
 from zoneinfo import ZoneInfo
 
 from ..config import settings
+from .. import session as session_cfg
 from ..providers import tradier as t
 from ..providers import polygon as p
 
@@ -54,6 +55,17 @@ async def evaluate(signal: Dict[str, Any]) -> Tuple[bool, List[str]]:
     now_et = datetime.now(ZoneInfo("America/New_York"))
     # Allow per-symbol window override via WINDOW_<SYM>=HH:MM-HH:MM
     win_start, win_end = cfg.trading_window_start, cfg.trading_window_end
+    current_session = None
+    try:
+        ses_cfg = session_cfg.load_session_config()
+        current_session = ses_cfg.current(now_et)
+        if current_session:
+            win_start = current_session.start.strftime("%H:%M")
+            win_end = current_session.end.strftime("%H:%M")
+    except FileNotFoundError:
+        current_session = None
+    except Exception:
+        current_session = None
     try:
         w = os.getenv(f"WINDOW_{sym}") or None
         if w and "-" in w:
