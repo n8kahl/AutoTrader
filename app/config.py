@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     # Strategy
     symbols: str = Field(default="AAPL,MSFT,TSLA,SPY,QQQ", alias="SYMBOLS")
     default_qty: int = Field(default=1, alias="ORDER_QTY")
+    strategy_interval: str = Field(default="1m", alias="STRATEGY_INTERVAL")  # 1m|5m|1d
+    lookback_min: int = Field(default=180, alias="LOOKBACK_MIN")
+    lookback_days: int = Field(default=120, alias="LOOKBACK_DAYS")
 
     # Risk Guardrails
     risk_max_concurrent: int = Field(default=3, alias="RISK_MAX_CONCURRENT")

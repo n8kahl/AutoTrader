@@ -32,6 +32,7 @@ Strategy (EMA crossover)
 - Configure symbols and qty in `.env`:
   - `SYMBOLS=AAPL,MSFT,TSLA,SPY,QQQ`
   - `ORDER_QTY=1`
+  - `STRATEGY_INTERVAL=1m|5m|1d` (defaults to 1m; 5m or 1d if your data tier limits intraday)
 
 Risk Guardrails
 - Time window in America/New_York: `TRADING_WINDOW_START=09:31`, `TRADING_WINDOW_END=15:55`
@@ -47,6 +48,15 @@ Brackets (optional)
 Signals preview
 - See what the worker would do and which risk checks would block it:
   - `curl -s http://YOUR_HOST:8080/api/v1/signals | jq`
+
+Cancel helpers
+- Cancel all open orders (optionally for one symbol):
+  - All: `curl -s -X POST "http://YOUR_HOST:8080/api/v1/orders/cancel_all" | jq`
+  - One: `curl -s -X POST "http://YOUR_HOST:8080/api/v1/orders/cancel_all?symbol=AAPL" | jq`
+
+Bracket preview
+- Preview stop/target and notional before placing:
+  - `curl -s "http://YOUR_HOST:8080/api/v1/bracket/preview?symbol=AAPL&qty=1&stop_pct=0.01&tp_pct=0.02" | jq`
 
 Environment
 - `TRADIER_ACCESS_TOKEN` — sandbox or production token

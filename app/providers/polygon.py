@@ -55,3 +55,20 @@ async def minute_bars(symbol: str, minutes: int = 120, timeout: float = 10.0) ->
             ]
         except Exception:
             return []
+
+
+async def daily_bars(symbol: str, days: int = 120, timeout: float = 10.0) -> List[Dict[str, Any]]:
+    key = os.getenv("POLYGON_API_KEY", "")
+    now_ms = int(time.time() * 1000)
+    frm = now_ms - max(1, days) * 86_400_000
+    async with httpx.AsyncClient(timeout=timeout) as c:
+        r = await c.get(
+            f"{BASE}/v2/aggs/ticker/{symbol.upper()}/range/1/day/{frm}/{now_ms}",
+            params={"apiKey": key, "adjusted": "true", "sort": "asc", "limit": 5000},
+        )
+        r.raise_for_status()
+        j = r.json() or {}
+        return [
+            {"t": b.get("t"), "o": b.get("o"), "h": b.get("h"), "l": b.get("l"), "c": b.get("c"), "v": b.get("v")}
+            for b in (j.get("results") or [])
+        ]

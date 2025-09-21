@@ -28,7 +28,13 @@ async def ema_crossover_signals() -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     for s in syms:
         try:
-            bars = await poly.minute_bars(s, minutes=180)
+            if cfg.strategy_interval == "1m":
+                bars = await poly.minute_bars(s, minutes=cfg.lookback_min)
+            elif cfg.strategy_interval == "5m":
+                # Get 5m by requesting 5m fallback via minute_bars (already implemented)
+                bars = await poly.minute_bars(s, minutes=cfg.lookback_min)
+            else:  # daily
+                bars = await poly.daily_bars(s, days=cfg.lookback_days)
         except Exception:
             continue
         closes = [float(b.get("c") or 0) for b in bars]

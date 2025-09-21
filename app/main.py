@@ -73,6 +73,37 @@ async def orders(status: str | None = None):
         return {"ok": False, "error": type(e).__name__, "detail": str(e)}
 
 
+@app.post("/api/v1/orders/cancel_all")
+async def orders_cancel_all(symbol: str | None = None, status: str = "open"):
+    cfg = settings()
+    if not cfg.tradier_account_id:
+        return {"ok": False, "error": "TRADIER_ACCOUNT_ID is not set"}
+    try:
+        j = await t.list_orders(cfg.tradier_account_id, status=status)
+        raw = (j.get("orders") or {}).get("order") or []
+        items = raw if isinstance(raw, list) else [raw]
+        if symbol:
+            s = symbol.upper()
+            items = [o for o in items if (o.get("symbol") or "").upper() == s]
+        results = []
+        for o in items:
+            oid = o.get("id")
+            st = (o.get("status") or "").lower()
+            if not oid:
+                continue
+            if st not in ("pending", "open", "received", "accepted"):
+                results.append({"id": oid, "skipped": True, "status": st})
+                continue
+            try:
+                r = await t.cancel_order(cfg.tradier_account_id, str(oid))
+                results.append({"id": oid, "canceled": True, "resp": r})
+            except Exception as e:
+                results.append({"id": oid, "error": type(e).__name__, "detail": str(e)})
+        return {"ok": True, "results": results}
+    except Exception as e:
+        return {"ok": False, "error": type(e).__name__, "detail": str(e)}
+
+
 @app.get("/api/v1/orders/{order_id}")
 async def order_get(order_id: str):
     cfg = settings()
@@ -161,3 +192,25 @@ async def signals_preview():
         ok, reasons = await riskmod.evaluate(s)
         out.append({"signal": s, "pass": ok, "reasons": reasons})
     return {"ok": True, "signals": out}
+
+
+@app.get("/api/v1/bracket/preview")
+async def bracket_preview(symbol: str, qty: int = 1, stop_pct: float | None = None, tp_pct: float | None = None):
+    cfg = settings()
+    stop_p = stop_pct if stop_pct is not None else cfg.stop_pct
+    tp_p = tp_pct if tp_pct is not None else cfg.tp_pct
+    if stop_p is None or tp_p is None:
+        return {"ok": False, "error": "Missing stop_pct or tp_pct (or STOP_PCT/TP_PCT not set)"}
+    try:
+        lt = await strat.poly.last_trade(symbol)
+        price = float(lt.get("price") or 0)
+        if not price:
+            return {"ok": False, "error": "No price"}
+        stop = round(price * (1 - float(stop_p)), 2)
+        tp = round(price * (1 + float(tp_p)), 2)
+        notional = round(price * qty, 2)
+        sig = {"symbol": symbol.upper(), "side": "buy", "qty": qty, "type": "market"}
+        ok, reasons = await riskmod.evaluate(sig)
+        return {"ok": True, "price": price, "qty": qty, "notional": notional, "stop": stop, "take_profit": tp, "risk_pass": ok, "risk_reasons": reasons}
+    except Exception as e:
+        return {"ok": False, "error": type(e).__name__, "detail": str(e)}
