@@ -27,7 +27,10 @@ async def ema_crossover_signals() -> List[Dict[str, Any]]:
     syms = [s.strip().upper() for s in cfg.symbols.split(",") if s.strip()]
     out: List[Dict[str, Any]] = []
     for s in syms:
-        bars = await poly.minute_bars(s, minutes=180)
+        try:
+            bars = await poly.minute_bars(s, minutes=180)
+        except Exception:
+            continue
         closes = [float(b.get("c") or 0) for b in bars]
         if len(closes) < 60:
             continue
@@ -46,4 +49,3 @@ async def ema_crossover_signals() -> List[Dict[str, Any]]:
             })
         # For now we don't auto-exit; add short/exit logic later
     return out
-

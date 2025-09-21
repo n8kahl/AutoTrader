@@ -127,7 +127,9 @@ async def flatten(symbol: str | None = None):
     if not cfg.tradier_account_id:
         return {"ok": False, "error": "TRADIER_ACCOUNT_ID is not set"}
     snap = await riskmod.portfolio_snapshot()
-    positions = (snap.get("positions") or [])
+    positions = snap.get("positions") or []
+    if isinstance(positions, dict):
+        positions = [positions]
     targets = [p for p in positions if float(p.get("quantity") or 0) != 0]
     if symbol:
         s = symbol.upper()
@@ -150,8 +152,10 @@ async def flatten(symbol: str | None = None):
 
 @app.get("/api/v1/signals")
 async def signals_preview():
-    cfg = settings()
-    sigs = await strat.ema_crossover_signals()
+    try:
+        sigs = await strat.ema_crossover_signals()
+    except Exception as e:
+        return {"ok": True, "signals": [], "provider_error": f"{type(e).__name__}: {e}"}
     out = []
     for s in sigs:
         ok, reasons = await riskmod.evaluate(s)

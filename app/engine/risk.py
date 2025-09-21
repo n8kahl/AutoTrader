@@ -25,9 +25,15 @@ async def portfolio_snapshot() -> Dict[str, Any]:
         return out
     try:
         pos = await t.list_positions(acct)
-        out["positions"] = (pos.get("positions") or {}).get("position") or []
+        raw = (pos.get("positions") or {}).get("position")
+        if isinstance(raw, list):
+            out["positions"] = raw
+        elif isinstance(raw, dict):
+            out["positions"] = [raw]
+        else:
+            out["positions"] = []
     except Exception:
-        pass
+        out["positions"] = []
     try:
         oo = await t.list_orders(acct, status="open")
         raw = (oo.get("orders") or {}).get("order") or []
