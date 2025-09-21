@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     stop_pct: float | None = Field(default=None, alias="STOP_PCT")
     tp_pct: float | None = Field(default=None, alias="TP_PCT")
 
+    # Trailing stop (optional)
+    trail_pct: float | None = Field(default=None, alias="TRAIL_PCT")
+    trail_activation_pct: float | None = Field(default=None, alias="TRAIL_ACT_PCT")
+
     class Config:
         env_file = ".env"
         case_sensitive = False

@@ -96,12 +96,86 @@ async def scan_once(cfg) -> None:
         print("[worker] exit-scan error:", type(e).__name__, str(e))
 
 
+# Simple in-memory trailing state (resets on restart)
+_HIGH_WATER: dict[str, float] = {}
+
+
+async def trailing_exit_pass(cfg) -> None:
+    if not (cfg.trail_pct and cfg.trail_pct > 0):
+        return
+    snap = await risk.portfolio_snapshot()
+    open_pos = [p for p in (snap.get("positions") or []) if float(p.get("quantity") or 0) > 0]
+    for ppos in open_pos:
+        sym = (ppos.get("symbol") or "").upper()
+        qty = int(float(ppos.get("quantity") or 0))
+        if qty <= 0:
+            continue
+        # Try to resolve price from Polygon then Tradier
+        price = None
+        try:
+            lt = await poly.last_trade(sym)
+            price = float(lt.get("price") or 0) or None
+        except Exception:
+            price = None
+        if not price:
+            try:
+                q = await t.get_quote(sym)
+                qq = (q.get("quotes") or {}).get("quote")
+                if isinstance(qq, list):
+                    qq = qq[0] if qq else {}
+                price = float((qq or {}).get("last") or 0) or None
+            except Exception:
+                price = None
+        if not price:
+            continue
+
+        # Update high watermark
+        hi = _HIGH_WATER.get(sym, price)
+        if price > hi:
+            hi = price
+            _HIGH_WATER[sym] = hi
+
+        # Optional activation threshold based on cost_basis
+        activate = True
+        if cfg.trail_activation_pct is not None:
+            try:
+                cb = float(ppos.get("cost_basis") or 0) or None
+            except Exception:
+                cb = None
+            if cb:
+                activate = hi >= cb * (1 + float(cfg.trail_activation_pct))
+
+        if not activate:
+            continue
+
+        trigger = hi * (1 - float(cfg.trail_pct))
+        if price <= trigger:
+            if cfg.dry_run:
+                print(f"[worker] EXIT DRY_RUN trail {qty} {sym} @ {price:.2f} (hi {hi:.2f}, trigger {trigger:.2f})")
+                _HIGH_WATER.pop(sym, None)
+                continue
+            try:
+                resp = await t.place_equity_order(
+                    account_id=cfg.tradier_account_id,
+                    symbol=sym,
+                    side="sell",
+                    qty=qty,
+                    order_type="market",
+                    duration="day",
+                )
+                print("[worker] EXIT (trailing) order response:", resp)
+                _HIGH_WATER.pop(sym, None)
+            except Exception as e:
+                print("[worker] EXIT (trailing) order error:", type(e).__name__, str(e))
+
+
 async def main() -> None:
     cfg = settings()
     print("[worker] started, interval:", cfg.scan_interval_sec)
     while True:
         try:
             await scan_once(cfg)
+            await trailing_exit_pass(cfg)
         except Exception as e:
             print("[worker] scan error:", type(e).__name__, str(e))
         await asyncio.sleep(max(5, int(cfg.scan_interval_sec)))

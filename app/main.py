@@ -231,3 +231,79 @@ async def bracket_preview(symbol: str, qty: int = 1, stop_pct: float | None = No
         return {"ok": True, "price": px, "qty": qty, "notional": notional, "stop": stop, "take_profit": tp, "risk_pass": ok, "risk_reasons": reasons}
     except Exception as e:
         return {"ok": False, "error": type(e).__name__, "detail": str(e)}
+
+
+@app.post("/api/v1/bracket/place")
+async def bracket_place(body: dict):
+    cfg = settings()
+    sym = (body.get("symbol") or "").upper()
+    qty = int(body.get("qty") or cfg.default_qty)
+    stop_pct = body.get("stop_pct")
+    tp_pct = body.get("tp_pct")
+    price = body.get("price")  # optional price reference for stop/tp calc; also used for limit
+    order_type = (body.get("type") or "market").lower()  # market|limit
+    duration = body.get("duration") or "day"
+    force = bool(body.get("force") or False)
+    if not sym:
+        return {"ok": False, "error": "symbol is required"}
+    # Resolve pct from env if not provided
+    sp = float(stop_pct) if stop_pct is not None else (cfg.stop_pct if cfg.stop_pct is not None else None)
+    tp = float(tp_pct) if tp_pct is not None else (cfg.tp_pct if cfg.tp_pct is not None else None)
+    if sp is None or tp is None:
+        return {"ok": False, "error": "Missing stop_pct/tp_pct or STOP_PCT/TP_PCT not set"}
+
+    # Price reference (for bracket calc)
+    px = None
+    if price is not None:
+        try:
+            px = float(price)
+        except Exception:
+            px = None
+    if not px:
+        try:
+            lt = await strat.poly.last_trade(sym)
+            px = float(lt.get("price") or 0) or None
+        except Exception:
+            px = None
+    if not px:
+        try:
+            q = await t.get_quote(sym)
+            qq = (q.get("quotes") or {}).get("quote")
+            if isinstance(qq, list):
+                qq = qq[0] if qq else {}
+            px = float((qq or {}).get("last") or 0) or None
+        except Exception:
+            px = None
+    if not px:
+        return {"ok": False, "error": "No price available (Polygon/Tradier denied or empty). Provide body.price if needed."}
+
+    stop = round(px * (1 - float(sp)), 2)
+    take_profit = round(px * (1 + float(tp)), 2)
+
+    sig = {"symbol": sym, "side": "buy", "qty": qty, "type": order_type}
+    ok, reasons = await riskmod.evaluate(sig)
+    if not ok and not force:
+        return {"ok": False, "blocked": True, "reasons": reasons}
+
+    if cfg.dry_run:
+        out = {"symbol": sym, "qty": qty, "type": order_type, "duration": duration, "stop": stop, "take_profit": take_profit}
+        if order_type == "limit":
+            out["price"] = px
+        return {"ok": True, "dry_run": True, "would_send": out}
+
+    try:
+        resp = await t.place_equity_order(
+            account_id=cfg.tradier_account_id,
+            symbol=sym,
+            side="buy",
+            qty=qty,
+            order_type=order_type,
+            duration=duration,
+            price=(px if order_type == "limit" else None),
+            stop=stop,
+            advanced="otoco",
+            take_profit=take_profit,
+        )
+        return {"ok": True, "dry_run": False, "resp": resp}
+    except Exception as e:
+        return {"ok": False, "error": type(e).__name__, "detail": str(e)}

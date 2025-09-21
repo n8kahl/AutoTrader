@@ -57,6 +57,31 @@ Cancel helpers
 Bracket preview
 - Preview stop/target and notional before placing:
   - `curl -s "http://YOUR_HOST:8080/api/v1/bracket/preview?symbol=AAPL&qty=1&stop_pct=0.01&tp_pct=0.02" | jq`
+  - Add `&price=235.10` to override price when data providers are limited.
+
+Place bracket order
+- POST with JSON body; respects DRY_RUN and risk checks (use `force:true` to bypass risk):
+```
+curl -s -X POST http://YOUR_HOST:8080/api/v1/bracket/place \
+ -H 'Content-Type: application/json' \
+ -d '{
+   "symbol":"AAPL", "qty":1, "type":"market",
+   "stop_pct":0.01, "tp_pct":0.02
+ }' | jq
+```
+- Limit entry example (uses price as entry and as bracket base):
+```
+curl -s -X POST http://YOUR_HOST:8080/api/v1/bracket/place \
+ -H 'Content-Type: application/json' \
+ -d '{
+   "symbol":"AAPL", "qty":1, "type":"limit", "price":235.10,
+   "stop_pct":0.01, "tp_pct":0.02
+ }' | jq
+```
+
+Trailing exit (optional)
+- Enable in `.env`: `TRAIL_PCT=0.01` (1% trail), optionally `TRAIL_ACT_PCT=0.01` to activate after 1% gain.
+- Worker tracks a simple in‑memory high watermark per symbol and sells when price <= high*(1-TRAIL_PCT).
 
 Environment
 - `TRADIER_ACCESS_TOKEN` — sandbox or production token
