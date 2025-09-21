@@ -39,3 +39,14 @@ Notes
 - Sandbox quotes/orders are delayed ~15 minutes; streaming is not available.
 - Start with `DRY_RUN=1`. Switch to `0` only after confirming behavior.
 
+Order Management (new)
+- List orders:
+  - `curl -s http://YOUR_HOST:8080/api/v1/orders | jq`
+- Get one order:
+  - `curl -s http://YOUR_HOST:8080/api/v1/orders/ORDER_ID | jq`
+- Cancel order:
+  - `curl -s -X POST http://YOUR_HOST:8080/api/v1/orders/ORDER_ID/cancel | jq`
+- Positions:
+  - `curl -s http://YOUR_HOST:8080/api/v1/positions | jq`
+- Account balances:
+  - `curl -s http://YOUR_HOST:8080/api/v1/account/balances | jq`

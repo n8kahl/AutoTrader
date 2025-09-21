@@ -58,3 +58,62 @@ async def dryrun(body: dict):
 
 Instrumentator().instrument(app).expose(app)
 
+# ----- Order management -----
+@app.get("/api/v1/orders")
+async def orders(status: str | None = None):
+    cfg = settings()
+    if not cfg.tradier_account_id:
+        return {"ok": False, "error": "TRADIER_ACCOUNT_ID is not set"}
+    try:
+        j = await t.list_orders(cfg.tradier_account_id, status=status)
+        return {"ok": True, "orders": j}
+    except Exception as e:
+        return {"ok": False, "error": type(e).__name__, "detail": str(e)}
+
+
+@app.get("/api/v1/orders/{order_id}")
+async def order_get(order_id: str):
+    cfg = settings()
+    if not cfg.tradier_account_id:
+        return {"ok": False, "error": "TRADIER_ACCOUNT_ID is not set"}
+    try:
+        j = await t.get_order(cfg.tradier_account_id, order_id)
+        return {"ok": True, "order": j}
+    except Exception as e:
+        return {"ok": False, "error": type(e).__name__, "detail": str(e)}
+
+
+@app.post("/api/v1/orders/{order_id}/cancel")
+async def order_cancel(order_id: str):
+    cfg = settings()
+    if not cfg.tradier_account_id:
+        return {"ok": False, "error": "TRADIER_ACCOUNT_ID is not set"}
+    try:
+        j = await t.cancel_order(cfg.tradier_account_id, order_id)
+        return {"ok": True, "canceled": j}
+    except Exception as e:
+        return {"ok": False, "error": type(e).__name__, "detail": str(e)}
+
+
+@app.get("/api/v1/positions")
+async def positions():
+    cfg = settings()
+    if not cfg.tradier_account_id:
+        return {"ok": False, "error": "TRADIER_ACCOUNT_ID is not set"}
+    try:
+        j = await t.list_positions(cfg.tradier_account_id)
+        return {"ok": True, "positions": j}
+    except Exception as e:
+        return {"ok": False, "error": type(e).__name__, "detail": str(e)}
+
+
+@app.get("/api/v1/account/balances")
+async def balances():
+    cfg = settings()
+    if not cfg.tradier_account_id:
+        return {"ok": False, "error": "TRADIER_ACCOUNT_ID is not set"}
+    try:
+        j = await t.get_balances(cfg.tradier_account_id)
+        return {"ok": True, "balances": j}
+    except Exception as e:
+        return {"ok": False, "error": type(e).__name__, "detail": str(e)}

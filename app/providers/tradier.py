@@ -72,3 +72,70 @@ async def place_equity_order(
             raise TradierHTTPError(f"{r.status_code}: {r.text}")
         return r.json() or {}
 
+
+async def list_orders(account_id: str, status: str | None = None, timeout: float = 10.0) -> Dict[str, Any]:
+    url = f"{_resolve_base()}/accounts/{account_id}/orders"
+    headers = {
+        "Authorization": f"Bearer {_token()}",
+        "Accept": "application/json",
+    }
+    params: Dict[str, Any] = {}
+    if status:
+        params["status"] = status
+    async with httpx.AsyncClient(timeout=timeout) as c:
+        r = await c.get(url, headers=headers, params=params)
+        if r.status_code >= 400:
+            raise TradierHTTPError(f"{r.status_code}: {r.text}")
+        return r.json() or {}
+
+
+async def get_order(account_id: str, order_id: str, timeout: float = 10.0) -> Dict[str, Any]:
+    url = f"{_resolve_base()}/accounts/{account_id}/orders/{order_id}"
+    headers = {
+        "Authorization": f"Bearer {_token()}",
+        "Accept": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=timeout) as c:
+        r = await c.get(url, headers=headers)
+        if r.status_code >= 400:
+            raise TradierHTTPError(f"{r.status_code}: {r.text}")
+        return r.json() or {}
+
+
+async def cancel_order(account_id: str, order_id: str, timeout: float = 10.0) -> Dict[str, Any]:
+    url = f"{_resolve_base()}/accounts/{account_id}/orders/{order_id}"
+    headers = {
+        "Authorization": f"Bearer {_token()}",
+        "Accept": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=timeout) as c:
+        r = await c.delete(url, headers=headers)
+        if r.status_code >= 400:
+            raise TradierHTTPError(f"{r.status_code}: {r.text}")
+        return r.json() or {}
+
+
+async def list_positions(account_id: str, timeout: float = 10.0) -> Dict[str, Any]:
+    url = f"{_resolve_base()}/accounts/{account_id}/positions"
+    headers = {
+        "Authorization": f"Bearer {_token()}",
+        "Accept": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=timeout) as c:
+        r = await c.get(url, headers=headers)
+        if r.status_code >= 400:
+            raise TradierHTTPError(f"{r.status_code}: {r.text}")
+        return r.json() or {}
+
+
+async def get_balances(account_id: str, timeout: float = 10.0) -> Dict[str, Any]:
+    url = f"{_resolve_base()}/accounts/{account_id}/balances"
+    headers = {
+        "Authorization": f"Bearer {_token()}",
+        "Accept": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=timeout) as c:
+        r = await c.get(url, headers=headers)
+        if r.status_code >= 400:
+            raise TradierHTTPError(f"{r.status_code}: {r.text}")
+        return r.json() or {}
