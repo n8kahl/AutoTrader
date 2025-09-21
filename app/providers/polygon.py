@@ -12,6 +12,10 @@ class RateLimitError(RuntimeError):
     """Raised when Polygon responds with HTTP 429 and no cached data is available."""
 
 
+class PermissionDeniedError(RuntimeError):
+    """Raised when the Polygon key lacks access to the requested resource."""
+
+
 _BAR_CACHE: Dict[Tuple[str, str], Tuple[float, List[Dict[str, Any]]]] = {}
 _CACHE_TTL_SEC = 20.0
 
@@ -61,6 +65,14 @@ async def _get(path: str, params: Dict[str, Any] | None = None, timeout: float =
             autotrader_polygon_request_latency.labels(path=path).observe(duration)
             autotrader_polygon_request_total.labels(path=path, status=str(status)).inc()
             last_response = resp
+
+            if status in (401, 402, 403):
+                logger.error(
+                    "Polygon %s on %s — check API key permissions or plan tier",
+                    status,
+                    path,
+                )
+                raise PermissionDeniedError(f"Polygon returned {status} for {path}")
 
             if status == 429:
                 autotrader_polygon_request_retry_total.labels(path=path, reason="429").inc()
@@ -142,6 +154,11 @@ async def minute_bars(symbol: str, minutes: int = 120, timeout: float = 10.0) ->
         if cached:
             logger.debug("Polygon 1m bars served from cache for %s due to rate limit", symbol_upper)
             return cached[1]
+    except PermissionDeniedError:
+        if cached:
+            logger.debug("Polygon 1m bars served from cache for %s due to permission error", symbol_upper)
+            return cached[1]
+        raise
     except httpx.HTTPStatusError as exc:
         if exc.response is None or exc.response.status_code not in (401, 402, 403):
             raise
@@ -162,6 +179,11 @@ async def minute_bars(symbol: str, minutes: int = 120, timeout: float = 10.0) ->
     except RateLimitError:
         if cached:
             logger.debug("Polygon 5m bars served from cache for %s due to rate limit", symbol_upper)
+            return cached[1]
+        raise
+    except PermissionDeniedError:
+        if cached:
+            logger.debug("Polygon 5m bars served from cache for %s due to permission error", symbol_upper)
             return cached[1]
         raise
     except Exception:

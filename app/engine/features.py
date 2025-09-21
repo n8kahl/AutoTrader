@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from statistics import mean, pstdev
 from typing import Iterable, List, Optional
 
 from ..providers import polygon
+from ..providers.polygon import PermissionDeniedError
 from . import strategy
 
 
@@ -35,9 +37,17 @@ class FeatureEngine:
 
     def __init__(self, lookback_minutes: int = 180) -> None:
         self.lookback_minutes = lookback_minutes
+        self._logger = logging.getLogger("autotrader.engine.features")
 
     async def snapshot(self, symbol: str) -> FeatureSnapshot:
-        bars = await polygon.minute_bars(symbol, minutes=self.lookback_minutes)
+        try:
+            bars = await polygon.minute_bars(symbol, minutes=self.lookback_minutes)
+        except PermissionDeniedError:
+            self._logger.warning(
+                "Polygon permission denied fetching minute bars for %s; returning empty snapshot",
+                symbol,
+            )
+            bars = []
         if not bars:
             return FeatureSnapshot(
                 symbol=symbol.upper(),

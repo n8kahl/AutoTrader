@@ -5,7 +5,7 @@ from typing import Dict, Any
 from .config import settings, symbol_overrides
 from .providers import tradier as t
 from .providers import polygon as poly
-from .providers.polygon import RateLimitError
+from .providers.polygon import PermissionDeniedError, RateLimitError
 from .state import load_high_water, save_high_water
 from . import ledger
 from .engine import strategy
@@ -85,6 +85,9 @@ async def scan_once(cfg) -> None:
                 bars = await poly.minute_bars(sym, minutes=180)
             except RateLimitError:
                 print(f"[worker] EXIT rate limited fetching bars for {sym}, skipping this pass")
+                continue
+            except PermissionDeniedError:
+                print(f"[worker] EXIT polygon permission denied for {sym}, skipping this pass")
                 continue
             closes = [float(b.get("c") or 0) for b in bars]
             if len(closes) < 60:
