@@ -76,6 +76,47 @@ async def orders(status: str | None = None):
         return {"ok": False, "error": type(e).__name__, "detail": str(e)}
 
 
+@app.post("/api/v1/orders/cancel_children")
+async def orders_cancel_children(symbol: str | None = None):
+    """Cancel open orders for symbols that are flat (or for given symbol). Helpful after bracket fills."""
+    cfg = settings()
+    if not cfg.tradier_account_id:
+        return {"ok": False, "error": "TRADIER_ACCOUNT_ID is not set"}
+    snap = await riskmod.portfolio_snapshot()
+    flat_syms = set()
+    for p in (snap.get("positions") or []):
+        try:
+            s = (p.get("symbol") or "").upper()
+            q = float(p.get("quantity") or 0)
+            if s and q == 0:
+                flat_syms.add(s)
+        except Exception:
+            continue
+    if symbol:
+        flat_syms = {symbol.upper()}
+    try:
+        j = await t.list_orders(cfg.tradier_account_id, status="open")
+        raw = (j.get("orders") or {}).get("order") or []
+        items = raw if isinstance(raw, list) else [raw]
+        results = []
+        for o in items:
+            s = (o.get("symbol") or "").upper()
+            oid = o.get("id")
+            st = (o.get("status") or "").lower()
+            if not oid or s not in flat_syms or st not in ("pending", "open", "received", "accepted"):
+                continue
+            try:
+                ledger.event("order_cancel_req", data={"order_id": oid, "symbol": s, "reason": "flat_symbol"})
+                r = await t.cancel_order(cfg.tradier_account_id, str(oid))
+                ledger.event("order_cancel_resp", data={"order_id": oid, "resp": r})
+                results.append({"id": oid, "symbol": s, "canceled": True})
+            except Exception as e:
+                results.append({"id": oid, "symbol": s, "error": type(e).__name__, "detail": str(e)})
+        return {"ok": True, "results": results}
+    except Exception as e:
+        return {"ok": False, "error": type(e).__name__, "detail": str(e)}
+
+
 @app.post("/api/v1/orders/cancel_all")
 async def orders_cancel_all(symbol: str | None = None, status: str = "open"):
     cfg = settings()
@@ -199,6 +240,40 @@ async def balances():
         return {"ok": True, "balances": j}
     except Exception as e:
         return {"ok": False, "error": type(e).__name__, "detail": str(e)}
+
+
+@app.post("/api/v1/exit/place")
+async def exit_place(body: dict):
+    cfg = settings()
+    sym = (body.get("symbol") or "").upper()
+    side = (body.get("side") or "sell").lower()  # sell|buy_to_cover
+    qty = int(body.get("qty") or 0)
+    otype = (body.get("type") or "market").lower()
+    price = body.get("price")
+    duration = body.get("duration") or "day"
+    if not cfg.tradier_account_id:
+        return {"ok": False, "error": "TRADIER_ACCOUNT_ID is not set"}
+    if not sym or qty <= 0:
+        return {"ok": False, "error": "symbol and positive qty required"}
+    if cfg.dry_run:
+        return {"ok": True, "dry_run": True, "would_send": {"symbol": sym, "side": side, "qty": qty, "type": otype, "duration": duration, "price": price}}
+    try:
+        resp = await t.place_equity_order(cfg.tradier_account_id, sym, side, qty, order_type=otype, duration=duration, price=price)
+        ledger.event("order_placed", data={"id": (resp.get("order") or {}).get("id"), "symbol": sym, "side": side, "qty": qty, "type": otype})
+        return {"ok": True, "resp": resp}
+    except Exception as e:
+        return {"ok": False, "error": type(e).__name__, "detail": str(e)}
+
+
+@app.get("/api/v1/diag/state")
+async def diag_state():
+    import os
+    d = os.getenv("STATE_DIR", "/srv/state")
+    try:
+        files = os.listdir(d)
+    except Exception as e:
+        files = [f"error: {type(e).__name__}: {e}"]
+    return {"ok": True, "state_dir": d, "files": files}
 
 
 @app.post("/api/v1/positions/flatten")
