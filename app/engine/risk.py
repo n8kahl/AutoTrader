@@ -1,9 +1,10 @@
 from __future__ import annotations
+import os
 from typing import Dict, Any, List, Tuple
 from datetime import datetime, time as dtime
 from zoneinfo import ZoneInfo
 
-from ..config import settings, symbol_overrides
+from ..config import settings
 from ..providers import tradier as t
 from ..providers import polygon as p
 
@@ -47,12 +48,13 @@ async def evaluate(signal: Dict[str, Any]) -> Tuple[bool, List[str]]:
     cfg = settings()
     reasons: List[str] = []
 
+    sym = (signal.get("symbol") or "").upper()
+
     # Trading window (America/New_York)
     now_et = datetime.now(ZoneInfo("America/New_York"))
     # Allow per-symbol window override via WINDOW_<SYM>=HH:MM-HH:MM
     win_start, win_end = cfg.trading_window_start, cfg.trading_window_end
     try:
-        ov = symbol_overrides(sym)
         w = os.getenv(f"WINDOW_{sym}") or None
         if w and "-" in w:
             a, b = w.split("-", 1)
@@ -63,7 +65,6 @@ async def evaluate(signal: Dict[str, Any]) -> Tuple[bool, List[str]]:
         reasons.append(f"Outside trading window {win_start}-{win_end} ET")
 
     # Symbols allow/deny
-    sym = (signal.get("symbol") or "").upper()
     if cfg.symbol_blacklist:
         bl = {s.strip().upper() for s in cfg.symbol_blacklist.split(",") if s.strip()}
         if sym in bl:
