@@ -5,6 +5,7 @@ from typing import Dict, Any
 from .config import settings, symbol_overrides
 from .providers import tradier as t
 from .providers import polygon as poly
+from .providers.polygon import RateLimitError
 from .state import load_high_water, save_high_water
 from . import ledger
 from .engine import strategy
@@ -73,10 +74,18 @@ async def scan_once(cfg) -> None:
     try:
         snap = await risk.portfolio_snapshot()
         open_pos = [p for p in (snap.get("positions") or []) if float(p.get("quantity") or 0) > 0]
+        tracked_syms = {s.strip().upper() for s in cfg.symbols.split(",") if s.strip()}
         for ppos in open_pos:
             sym = (ppos.get("symbol") or "").upper()
+            if tracked_syms and sym not in tracked_syms:
+                print(f"[worker] EXIT skip unmanaged symbol {sym}")
+                continue
             # Compute EMA cross-down
-            bars = await poly.minute_bars(sym, minutes=180)
+            try:
+                bars = await poly.minute_bars(sym, minutes=180)
+            except RateLimitError:
+                print(f"[worker] EXIT rate limited fetching bars for {sym}, skipping this pass")
+                continue
             closes = [float(b.get("c") or 0) for b in bars]
             if len(closes) < 60:
                 continue
