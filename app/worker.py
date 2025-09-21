@@ -5,6 +5,7 @@ from typing import Dict, Any
 from .config import settings, symbol_overrides
 from .providers import tradier as t
 from .providers import polygon as poly
+from .state import load_high_water, save_high_water
 from .engine import strategy
 from .engine import risk
 
@@ -138,6 +139,10 @@ async def trailing_exit_pass(cfg) -> None:
         if price > hi:
             hi = price
             _HIGH_WATER[sym] = hi
+            try:
+                save_high_water(_HIGH_WATER)
+            except Exception:
+                pass
 
         # Optional activation threshold based on cost_basis
         activate = True
@@ -169,6 +174,10 @@ async def trailing_exit_pass(cfg) -> None:
                 )
                 print("[worker] EXIT (trailing) order response:", resp)
                 _HIGH_WATER.pop(sym, None)
+                try:
+                    save_high_water(_HIGH_WATER)
+                except Exception:
+                    pass
             except Exception as e:
                 print("[worker] EXIT (trailing) order error:", type(e).__name__, str(e))
 
@@ -176,6 +185,14 @@ async def trailing_exit_pass(cfg) -> None:
 async def main() -> None:
     cfg = settings()
     print("[worker] started, interval:", cfg.scan_interval_sec)
+    # load trailing state
+    try:
+        _loaded = load_high_water()
+        if _loaded:
+            _HIGH_WATER.update(_loaded)
+            print(f"[worker] loaded high_water for {len(_HIGH_WATER)} symbols")
+    except Exception as e:
+        print("[worker] load state error:", type(e).__name__, str(e))
     while True:
         try:
             await scan_once(cfg)

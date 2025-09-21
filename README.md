@@ -62,6 +62,8 @@ Cancel helpers
 - Cancel all open orders (optionally for one symbol):
   - All: `curl -s -X POST "http://YOUR_HOST:8080/api/v1/orders/cancel_all" | jq`
   - One: `curl -s -X POST "http://YOUR_HOST:8080/api/v1/orders/cancel_all?symbol=AAPL" | jq`
+ - Cancel stale (> N minutes):
+  - `curl -s -X POST "http://YOUR_HOST:8080/api/v1/orders/cancel_stale?minutes=60" | jq`
 
 Bracket preview
 - Preview stop/target and notional before placing:
@@ -120,3 +122,9 @@ Flatten positions (safety)
 - Close all or a single symbol at market:
   - All: `curl -s -X POST "http://YOUR_HOST:8080/api/v1/positions/flatten" | jq`
   - One: `curl -s -X POST "http://YOUR_HOST:8080/api/v1/positions/flatten?symbol=AAPL" | jq`
+Risk preview
+- Evaluate a hypothetical order with current risk settings and get rough notional:
+  - `curl -s "http://YOUR_HOST:8080/api/v1/risk/preview?symbol=AAPL&qty=1" | jq`
+
+State persistence
+- Trailing high-water survives restarts (stored under `/srv/state`). Docker Compose mounts `./state` so the data persists.

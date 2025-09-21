@@ -3,7 +3,7 @@ from typing import Dict, Any, List, Tuple
 from datetime import datetime, time as dtime
 from zoneinfo import ZoneInfo
 
-from ..config import settings
+from ..config import settings, symbol_overrides
 from ..providers import tradier as t
 from ..providers import polygon as p
 
@@ -49,8 +49,18 @@ async def evaluate(signal: Dict[str, Any]) -> Tuple[bool, List[str]]:
 
     # Trading window (America/New_York)
     now_et = datetime.now(ZoneInfo("America/New_York"))
-    if not _time_in_window(now_et, cfg.trading_window_start, cfg.trading_window_end):
-        reasons.append(f"Outside trading window {cfg.trading_window_start}-{cfg.trading_window_end} ET")
+    # Allow per-symbol window override via WINDOW_<SYM>=HH:MM-HH:MM
+    win_start, win_end = cfg.trading_window_start, cfg.trading_window_end
+    try:
+        ov = symbol_overrides(sym)
+        w = os.getenv(f"WINDOW_{sym}") or None
+        if w and "-" in w:
+            a, b = w.split("-", 1)
+            win_start, win_end = a.strip(), b.strip()
+    except Exception:
+        pass
+    if not _time_in_window(now_et, win_start, win_end):
+        reasons.append(f"Outside trading window {win_start}-{win_end} ET")
 
     # Symbols allow/deny
     sym = (signal.get("symbol") or "").upper()
@@ -79,14 +89,23 @@ async def evaluate(signal: Dict[str, Any]) -> Tuple[bool, List[str]]:
         reasons.append(f"Max positions for {sym} reached: {cfg.risk_max_positions_per_symbol}")
 
     # Notional cap
-    if cfg.risk_max_order_notional_usd is not None:
+    # Notional cap (symbol override NOTIONAL_<SYM> takes precedence)
+    sym_cap = None
+    try:
+        v = os.getenv(f"NOTIONAL_{sym}")
+        if v is not None and str(v).strip() != "":
+            sym_cap = float(v)
+    except Exception:
+        sym_cap = None
+    cap = sym_cap if sym_cap is not None else cfg.risk_max_order_notional_usd
+    if cap is not None:
         try:
             lt = await p.last_trade(sym)
             price = float(lt.get("price") or 0)
             qty = int(signal.get("qty") or 0)
             notional = price * qty
-            if notional > float(cfg.risk_max_order_notional_usd):
-                reasons.append(f"Order notional ${notional:.2f} exceeds cap ${cfg.risk_max_order_notional_usd}")
+            if notional > float(cap):
+                reasons.append(f"Order notional ${notional:.2f} exceeds cap ${cap}")
         except Exception:
             pass
 

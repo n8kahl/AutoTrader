@@ -105,6 +105,47 @@ async def orders_cancel_all(symbol: str | None = None, status: str = "open"):
         return {"ok": False, "error": type(e).__name__, "detail": str(e)}
 
 
+@app.post("/api/v1/orders/cancel_stale")
+async def orders_cancel_stale(minutes: int = 60, symbol: str | None = None):
+    from datetime import datetime
+    cfg = settings()
+    if not cfg.tradier_account_id:
+        return {"ok": False, "error": "TRADIER_ACCOUNT_ID is not set"}
+    try:
+        j = await t.list_orders(cfg.tradier_account_id, status="open")
+        raw = (j.get("orders") or {}).get("order") or []
+        items = raw if isinstance(raw, list) else [raw]
+        if symbol:
+            s = symbol.upper()
+            items = [o for o in items if (o.get("symbol") or "").upper() == s]
+        results = []
+        cutoff = datetime.utcnow().timestamp() - minutes * 60
+        def _to_ts(s: str | None) -> float:
+            if not s:
+                return 0.0
+            try:
+                s2 = s.replace("Z", "+00:00")
+                return datetime.fromisoformat(s2).timestamp()
+            except Exception:
+                return 0.0
+        for o in items:
+            oid = o.get("id")
+            st = (o.get("status") or "").lower()
+            ts = _to_ts(o.get("transaction_date") or o.get("create_date"))
+            if not oid or st not in ("pending", "open", "received", "accepted"):
+                continue
+            if ts and ts > cutoff:
+                continue
+            try:
+                r = await t.cancel_order(cfg.tradier_account_id, str(oid))
+                results.append({"id": oid, "canceled": True, "resp": r})
+            except Exception as e:
+                results.append({"id": oid, "error": type(e).__name__, "detail": str(e)})
+        return {"ok": True, "results": results}
+    except Exception as e:
+        return {"ok": False, "error": type(e).__name__, "detail": str(e)}
+
+
 @app.get("/api/v1/orders/{order_id}")
 async def order_get(order_id: str):
     cfg = settings()
@@ -216,6 +257,30 @@ async def signals_preview():
         ok, reasons = await riskmod.evaluate(s)
         out.append({"signal": s, "pass": ok, "reasons": reasons})
     return {"ok": True, "signals": out}
+
+
+@app.get("/api/v1/risk/preview")
+async def risk_preview(symbol: str, qty: int = 1, otype: str = "market"):
+    sig = {"symbol": (symbol or "").upper(), "qty": qty, "type": otype, "side": "buy"}
+    ok, reasons = await riskmod.evaluate(sig)
+    # Rough notional using Tradier/Polygon price
+    px = None
+    try:
+        lt = await strat.poly.last_trade(sig["symbol"])  # type: ignore
+        px = float(lt.get("price") or 0) or None
+    except Exception:
+        px = None
+    if not px:
+        try:
+            q = await t.get_quote(sig["symbol"])  # type: ignore
+            qq = (q.get("quotes") or {}).get("quote")
+            if isinstance(qq, list):
+                qq = qq[0] if qq else {}
+            px = float((qq or {}).get("last") or 0) or None
+        except Exception:
+            px = None
+    notional = round((px or 0) * qty, 2) if px else None
+    return {"ok": True, "pass": ok, "reasons": reasons, "price": px, "notional": notional}
 
 
 @app.get("/api/v1/bracket/preview")

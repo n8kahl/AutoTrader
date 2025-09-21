@@ -9,6 +9,8 @@ services:
     restart: unless-stopped
     depends_on:
       - worker
+    volumes:
+      - ./state:/srv/state
 
   worker:
     build: .
@@ -17,3 +19,5 @@ services:
     env_file:
       - .env
     restart: unless-stopped
+    volumes:
+      - ./state:/srv/state
