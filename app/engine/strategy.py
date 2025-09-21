@@ -1,8 +1,7 @@
 from __future__ import annotations
 from typing import Dict, Any, List, Tuple
 
-from ..config import settings
-from ..providers import polygon as poly
+from .plays import generate_signals as _generate_state_signals
 
 
 def ema(series: List[float], period: int) -> List[float]:
@@ -18,40 +17,6 @@ def ema(series: List[float], period: int) -> List[float]:
 
 
 async def ema_crossover_signals() -> List[Dict[str, Any]]:
-    """Very simple EMA20/EMA50 cross strategy on 1m bars.
-    - Buy when EMA20 crosses above EMA50 and price above EMA50.
-    - Sell when EMA20 crosses below EMA50 and price below EMA50. (not used yet)
-    Returns market order signals with qty from settings.
-    """
-    cfg = settings()
-    syms = [s.strip().upper() for s in cfg.symbols.split(",") if s.strip()]
-    out: List[Dict[str, Any]] = []
-    for s in syms:
-        try:
-            if cfg.strategy_interval == "1m":
-                bars = await poly.minute_bars(s, minutes=cfg.lookback_min)
-            elif cfg.strategy_interval == "5m":
-                # Get 5m by requesting 5m fallback via minute_bars (already implemented)
-                bars = await poly.minute_bars(s, minutes=cfg.lookback_min)
-            else:  # daily
-                bars = await poly.daily_bars(s, days=cfg.lookback_days)
-        except Exception:
-            continue
-        closes = [float(b.get("c") or 0) for b in bars]
-        if len(closes) < 60:
-            continue
-        e20 = ema(closes, 20)
-        e50 = ema(closes, 50)
-        p = closes[-1]
-        # Cross up detection: previous diff <=0 and current diff >0
-        diff_prev = e20[-2] - e50[-2]
-        diff_now = e20[-1] - e50[-1]
-        if diff_prev <= 0 and diff_now > 0 and p > e50[-1]:
-            out.append({
-                "symbol": s,
-                "side": "buy",
-                "qty": cfg.default_qty,
-                "type": "market",
-            })
-        # For now we don't auto-exit; add short/exit logic later
-    return out
+    """Compatibility shim returning the new strategy engine outputs."""
+
+    return await _generate_state_signals()

@@ -19,6 +19,8 @@ class FeatureSnapshot:
     sigma_lower: Optional[float]
     ema20: Optional[float]
     ema50: Optional[float]
+    ema20_prev: Optional[float]
+    ema50_prev: Optional[float]
     ema20_slope: Optional[float]
     relative_volume: Optional[float]
     hod: Optional[float]
@@ -46,6 +48,8 @@ class FeatureEngine:
                 sigma_lower=None,
                 ema20=None,
                 ema50=None,
+                ema20_prev=None,
+                ema50_prev=None,
                 ema20_slope=None,
                 relative_volume=None,
                 hod=None,
@@ -67,6 +71,8 @@ class FeatureEngine:
         ema50_series = strategy.ema(closes, 50) if len(closes) >= 50 else []
         ema20_val = ema20_series[-1] if ema20_series else None
         ema50_val = ema50_series[-1] if ema50_series else None
+        ema20_prev = ema20_series[-2] if len(ema20_series) >= 2 else None
+        ema50_prev = ema50_series[-2] if len(ema50_series) >= 2 else None
         ema20_slope = _compute_slope(ema20_series)
 
         rvol = _compute_relative_volume(volumes)
@@ -80,6 +86,8 @@ class FeatureEngine:
             sigma_lower=vwap_val - sigma if vwap_val is not None and sigma is not None else None,
             ema20=ema20_val,
             ema50=ema50_val,
+            ema20_prev=ema20_prev,
+            ema50_prev=ema50_prev,
             ema20_slope=ema20_slope,
             relative_volume=rvol,
             hod=max(highs) if highs else None,

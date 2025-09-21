@@ -33,6 +33,7 @@ Strategy (EMA crossover)
   - `SYMBOLS=AAPL,MSFT,TSLA,SPY,QQQ`
   - `ORDER_QTY=1`
   - `STRATEGY_INTERVAL=1m|5m|1d` (defaults to 1m; 5m or 1d if your data tier limits intraday)
+- State machines for VWAP/Sigma/HOD plays are scaffolded under `app/engine/plays.py`; legacy EMA crossover remains the default until the new logic is enabled.
 
 Risk Guardrails
 - Time window in America/New_York: `TRADING_WINDOW_START=09:31`, `TRADING_WINDOW_END=15:55`
@@ -110,6 +111,9 @@ Environment
 Notes
 - Sandbox quotes/orders are delayed ~15 minutes; streaming is not available.
 - Start with `DRY_RUN=1`. Switch to `0` only after confirming behavior.
+
+Roadmap & Data
+- `docs/data_capture_plan.md` outlines the TimescaleDB ingest, feature store, and logging roadmap that powers backtests and ML analysis.
 
 Order Management (new)
 - List orders:
