@@ -1,5 +1,5 @@
 from __future__ import annotations
-import asyncio, os, time
+import asyncio, os, time, uuid
 from typing import Any, Dict, Optional
 
 from .config import settings, symbol_overrides
@@ -9,6 +9,7 @@ from .providers.polygon_options import option_feedback
 from .state import load_high_water, load_trade_state, save_high_water, save_trade_state
 from . import ledger
 from .metrics import autotrader_active_trades, autotrader_signal_total
+from . import storage
 from .engine import strategy
 from .engine import risk
 
@@ -125,16 +126,24 @@ def register_trade(sig: Dict[str, Any], plan: OrderPlan, cfg, dry_run: bool) -> 
         }
     )
     _ACTIVE_TRADES[symbol] = state
+    trade_id = state.get("trade_id")
+    if not trade_id:
+        trade_id = str(uuid.uuid4())
+        state["trade_id"] = trade_id
+    storage.create_trade(trade_id, symbol, sig.get("setup", "UNKNOWN"), plan.qty, plan.entry_price, plan.stop_price, plan.target1, plan.target2, time.time())
     save_trade_state(_ACTIVE_TRADES)
     autotrader_active_trades.set(len(_ACTIVE_TRADES))
 
 
-def cleanup_trade(symbol: str) -> None:
+def cleanup_trade(symbol: str, reason: str | None = None, exit_price: float | None = None) -> None:
     symbol = symbol.upper()
-    if symbol in _ACTIVE_TRADES:
-        _ACTIVE_TRADES.pop(symbol, None)
-        save_trade_state(_ACTIVE_TRADES)
-        autotrader_active_trades.set(len(_ACTIVE_TRADES))
+    state = _ACTIVE_TRADES.pop(symbol, None)
+    if state and reason:
+        trade_id = state.get("trade_id")
+        if trade_id:
+            storage.close_trade(trade_id, exit_price, reason, time.time())
+    save_trade_state(_ACTIVE_TRADES)
+    autotrader_active_trades.set(len(_ACTIVE_TRADES))
 
 
 def _as_float(value: Any) -> Optional[float]:
@@ -274,11 +283,13 @@ async def scan_once(cfg) -> None:
     for sig in signals:
         setup = (sig.get("setup") or "UNKNOWN").upper()
         ledger.event("signal_generated", data={"setup": setup, "symbol": sig.get("symbol"), "signal": sig})
+        storage.record_signal(sig.get("symbol", ""), setup, "generated", time.time(), None, sig.get("metadata") or {})
         autotrader_signal_total.labels(setup=setup, outcome="generated").inc()
         if not await options_feedback_allows(sig.get("symbol"), cfg):
             reason = "options_feedback_block"
             print(f"[worker] blocked by options feedback: {sig['symbol']}")
             ledger.event("signal_blocked", data={"setup": setup, "symbol": sig.get("symbol"), "reasons": [reason]})
+            storage.record_signal(sig.get("symbol", ""), setup, reason, time.time(), [reason], sig.get("metadata") or {})
             autotrader_signal_total.labels(setup=setup, outcome="options_blocked").inc()
             continue
         plan = compute_order_plan(sig, cfg)
@@ -287,10 +298,12 @@ async def scan_once(cfg) -> None:
         if not ok:
             print(f"[worker] blocked by risk: {sig['symbol']} — {', '.join(reasons)}")
             ledger.event("signal_blocked", data={"setup": setup, "symbol": sig.get("symbol"), "reasons": reasons})
+            storage.record_signal(sig.get("symbol", ""), setup, "risk_blocked", time.time(), reasons, sig.get("metadata") or {})
             autotrader_signal_total.labels(setup=setup, outcome="risk_blocked").inc()
             continue
         print(f"[worker] PASS risk: {sig}")
         ledger.event("signal_approved", data={"setup": setup, "symbol": sig.get("symbol"), "signal": sig})
+        storage.record_signal(sig.get("symbol", ""), setup, "approved", time.time(), None, sig.get("metadata") or {})
         autotrader_signal_total.labels(setup=setup, outcome="approved").inc()
         if cfg.dry_run:
             print("[worker] DRY_RUN=1 — not sending order")
@@ -424,8 +437,9 @@ async def ema_exit_pass(cfg) -> None:
         diff_prev = e20[-2] - e50[-2]
         diff_now = e20[-1] - e50[-1]
         if diff_prev >= 0 and diff_now < 0 and closes[-1] < e50[-1]:
-            await _execute_exit_order(cfg, sym, qty, reason="ema_cross_down", dry_run=cfg.dry_run)
-            cleanup_trade(sym)
+            resp = await _execute_exit_order(cfg, sym, qty, reason="ema_cross_down", dry_run=cfg.dry_run)
+            exit_price = (resp or {}).get("order", {}).get("price") if resp else None
+            cleanup_trade(sym, "ema_cross_down", exit_price)
 
 async def trailing_exit_pass(cfg) -> None:
     if not (cfg.trail_pct and cfg.trail_pct > 0):
