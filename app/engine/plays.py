@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, time as dt_time
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
@@ -261,10 +261,147 @@ class HodFailurePlay(Play):
         ]
 
 
+class OpeningRangeBreakoutPlay(Play):
+    name = "ORB"
+
+    def evaluate(self, snapshot: FeatureSnapshot, session: Optional[SessionPolicy], ctx: StrategyContext) -> List[StrategySignal]:
+        cfg = settings()
+        last = snapshot.last_price
+        atr = snapshot.atr14
+        or_high = snapshot.opening_range_high
+        if last is None or atr is None or or_high is None:
+            return []
+        now_et = snapshot.as_of.astimezone(ZoneInfo("America/New_York")) if snapshot.as_of else datetime.now(ZoneInfo("America/New_York"))
+        if now_et.time() < dt_time(10, 0) or now_et.time() > dt_time(14, 0):
+            return []
+        if snapshot.market_regime_score is not None and snapshot.market_regime_score < 0:
+            return []
+        if last <= or_high + 0.2 * atr:
+            return []
+        if snapshot.relative_volume is not None and snapshot.relative_volume < 1.1:
+            return []
+        if snapshot.ema5m_20 is not None and snapshot.ema5m_50 is not None and snapshot.ema5m_20 <= snapshot.ema5m_50:
+            return []
+        ts = now_et.timestamp()
+        if not ctx.can_emit(self.name, snapshot.symbol, ts, cfg.vwap_cooldown_sec):
+            return []
+        stop_price = or_high - cfg.risk_stop_atr_multiplier * atr
+        target1 = last + cfg.target_one_atr_multiplier * atr
+        target2 = last + cfg.target_two_atr_multiplier * atr
+        metadata = {
+            "reason": "opening_range_breakout",
+            "opening_range_high": or_high,
+            "entry_price": last,
+            "stop_price": stop_price,
+            "target1": target1,
+            "target2": target2,
+            "atr": atr,
+        }
+        ctx.mark_emit(self.name, snapshot.symbol, ts)
+        return [
+            StrategySignal(
+                symbol=snapshot.symbol,
+                setup=self.name,
+                side="buy",
+                qty=cfg.default_qty,
+                metadata=metadata,
+            )
+        ]
+
+
+class TrendPullbackPlay(Play):
+    name = "TREND_PULLBACK"
+
+    def evaluate(self, snapshot: FeatureSnapshot, session: Optional[SessionPolicy], ctx: StrategyContext) -> List[StrategySignal]:
+        cfg = settings()
+        last = snapshot.last_price
+        atr = snapshot.atr14
+        if last is None or atr is None or snapshot.ema20 is None or snapshot.ema50 is None:
+            return []
+        if snapshot.market_regime_score is not None and snapshot.market_regime_score < 0:
+            return []
+        if snapshot.ema5m_20 is not None and snapshot.ema5m_50 is not None and snapshot.ema5m_20 <= snapshot.ema5m_50:
+            return []
+        distance = snapshot.ema20 - last
+        if distance < 0 or abs(distance) > 1.5 * atr:
+            return []
+        if snapshot.relative_volume is not None and snapshot.relative_volume < 1.0:
+            return []
+        now_ts = snapshot.as_of.timestamp() if snapshot.as_of else time.time()
+        if not ctx.can_emit(self.name, snapshot.symbol, now_ts, cfg.vwap_cooldown_sec):
+            return []
+        stop_price = last - cfg.risk_stop_atr_multiplier * atr
+        target1 = last + cfg.target_one_atr_multiplier * atr
+        target2 = last + cfg.target_two_atr_multiplier * atr
+        metadata = {
+            "reason": "trend_pullback",
+            "entry_price": last,
+            "stop_price": stop_price,
+            "target1": target1,
+            "target2": target2,
+            "atr": atr,
+        }
+        ctx.mark_emit(self.name, snapshot.symbol, now_ts)
+        return [
+            StrategySignal(
+                symbol=snapshot.symbol,
+                setup=self.name,
+                side="buy",
+                qty=cfg.default_qty,
+                metadata=metadata,
+            )
+        ]
+
+
+class VWAPMeanRevertPlay(Play):
+    name = "VWAP_MEAN"
+
+    def evaluate(self, snapshot: FeatureSnapshot, session: Optional[SessionPolicy], ctx: StrategyContext) -> List[StrategySignal]:
+        cfg = settings()
+        last = snapshot.last_price
+        atr = snapshot.atr14
+        if last is None or atr is None or snapshot.vwap is None:
+            return []
+        if snapshot.market_regime_score is not None and snapshot.market_regime_score < 0:
+            return []
+        distance = snapshot.vwap - last
+        if distance < 0.5 * atr:
+            return []
+        if snapshot.relative_volume is not None and snapshot.relative_volume < 1.0:
+            return []
+        now_ts = snapshot.as_of.timestamp() if snapshot.as_of else time.time()
+        if not ctx.can_emit(self.name, snapshot.symbol, now_ts, cfg.vwap_cooldown_sec):
+            return []
+        stop_price = last - cfg.risk_stop_atr_multiplier * atr
+        target1 = snapshot.vwap
+        target2 = snapshot.vwap + cfg.target_two_atr_multiplier * atr
+        metadata = {
+            "reason": "vwap_mean_revert",
+            "entry_price": last,
+            "stop_price": stop_price,
+            "target1": target1,
+            "target2": target2,
+            "atr": atr,
+        }
+        ctx.mark_emit(self.name, snapshot.symbol, now_ts)
+        return [
+            StrategySignal(
+                symbol=snapshot.symbol,
+                setup=self.name,
+                side="buy",
+                qty=cfg.default_qty,
+                metadata=metadata,
+            )
+        ]
+
+
 class StrategyEngine:
     def __init__(self, feature_engine: Optional[FeatureEngine] = None, plays: Optional[List[Play]] = None) -> None:
         self.feature_engine = feature_engine or FeatureEngine()
         self.plays = plays or [
+            OpeningRangeBreakoutPlay(),
+            TrendPullbackPlay(),
+            VWAPMeanRevertPlay(),
             VWAPReclaimPlay(),
             SigmaFadePlay(),
             HodFailurePlay(),

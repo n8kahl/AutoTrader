@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from statistics import mean, pstdev
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -31,6 +31,13 @@ class FeatureSnapshot:
     lod: Optional[float]
     prev_close: Optional[float]
     atr14: Optional[float]
+    ema5m_20: Optional[float]
+    ema5m_50: Optional[float]
+    ema15m_20: Optional[float]
+    ema15m_50: Optional[float]
+    opening_range_high: Optional[float]
+    opening_range_low: Optional[float]
+    market_regime_score: Optional[float]
     cumulative_delta: Optional[float] = None
     orderbook_imbalance: Optional[float] = None
 
@@ -79,6 +86,13 @@ class FeatureEngine:
                 lod=None,
                 prev_close=None,
                 atr14=None,
+                ema5m_20=None,
+                ema5m_50=None,
+                ema15m_20=None,
+                ema15m_50=None,
+                opening_range_high=None,
+                opening_range_low=None,
+                market_regime_score=None,
             )
 
         closes: List[float] = [float(b.get("c") or 0) for b in bars if b.get("c") is not None]
@@ -107,6 +121,36 @@ class FeatureEngine:
         prev_close = closes[-2] if len(closes) >= 2 else None
         atr14 = _compute_atr(bars)
 
+        ema5m_20 = ema5m_50 = ema15m_20 = ema15m_50 = None
+        opening_range_high, opening_range_low = _compute_opening_range(bars)
+        market_regime_score = None
+
+        try:
+            bars5 = await tradier.five_minute_bars(symbol, minutes=self.lookback_minutes)
+        except TradierHTTPError:
+            bars5 = []
+        if bars5:
+            closes5 = [float(b.get("c") or 0) for b in bars5 if b.get("c") is not None]
+            ema5m_20_series = strategy.ema(closes5, 20) if len(closes5) >= 20 else []
+            ema5m_50_series = strategy.ema(closes5, 50) if len(closes5) >= 50 else []
+            ema5m_20 = ema5m_20_series[-1] if ema5m_20_series else None
+            ema5m_50 = ema5m_50_series[-1] if ema5m_50_series else None
+            bars15 = _aggregate_bars(bars5, group_size=3)
+            closes15 = [float(b.get("c") or 0) for b in bars15 if b.get("c") is not None]
+            ema15m_20_series = strategy.ema(closes15, 20) if len(closes15) >= 20 else []
+            ema15m_50_series = strategy.ema(closes15, 50) if len(closes15) >= 50 else []
+            ema15m_20 = ema15m_20_series[-1] if ema15m_20_series else None
+            ema15m_50 = ema15m_50_series[-1] if ema15m_50_series else None
+
+        components: List[float] = []
+        if ema5m_20 and ema5m_50 and ema5m_50 != 0:
+            components.append((ema5m_20 - ema5m_50) / abs(ema5m_50))
+        if ema15m_20 and ema15m_50 and ema15m_50 != 0:
+            components.append((ema15m_20 - ema15m_50) / abs(ema15m_50))
+        if ema20_slope is not None:
+            components.append(ema20_slope)
+        market_regime_score = sum(components) / len(components) if components else None
+
         return FeatureSnapshot(
             symbol=symbol.upper(),
             as_of=_resolve_timestamp(bars[-1]),
@@ -124,6 +168,13 @@ class FeatureEngine:
             lod=min(lows) if lows else None,
             prev_close=prev_close,
             atr14=atr14,
+            ema5m_20=ema5m_20,
+            ema5m_50=ema5m_50,
+            ema15m_20=ema15m_20,
+            ema15m_50=ema15m_50,
+            opening_range_high=opening_range_high,
+            opening_range_low=opening_range_low,
+            market_regime_score=market_regime_score,
         )
 
 
@@ -195,3 +246,53 @@ def _compute_atr(bars: List[Dict[str, Any]], period: int = 14) -> Optional[float
     if len(trs) < period:
         return None
     return sum(trs[-period:]) / period
+
+
+def _aggregate_bars(bars: List[Dict[str, Any]], group_size: int) -> List[Dict[str, Any]]:
+    aggregated: List[Dict[str, Any]] = []
+    bucket: List[Dict[str, Any]] = []
+    for bar in bars:
+        bucket.append(bar)
+        if len(bucket) == group_size:
+            aggregated.append(_merge_bucket(bucket))
+            bucket = []
+    if bucket:
+        aggregated.append(_merge_bucket(bucket))
+    return aggregated
+
+
+def _merge_bucket(bucket: List[Dict[str, Any]]) -> Dict[str, Any]:
+    high = max(float(b.get("h") or b.get("high") or 0.0) for b in bucket)
+    low = min(float(b.get("l") or b.get("low") or 0.0) for b in bucket)
+    close = float(bucket[-1].get("c") or bucket[-1].get("close") or 0.0)
+    open_ = float(bucket[0].get("o") or bucket[0].get("open") or 0.0)
+    volume = sum(float(b.get("v") or b.get("volume") or 0.0) for b in bucket)
+    return {"o": open_, "h": high, "l": low, "c": close, "v": volume, "t": bucket[-1].get("t")}
+
+
+def _compute_opening_range(bars: List[Dict[str, Any]]) -> tuple[Optional[float], Optional[float]]:
+    if not bars:
+        return None, None
+    open_time = datetime.now(timezone.utc)
+    try:
+        first_ts = _resolve_timestamp(bars[0])
+        open_time = first_ts.replace(hour=13, minute=30, second=0, microsecond=0)  # 09:30 ET
+    except Exception:
+        pass
+    end_time = open_time + timedelta(minutes=30)
+    highs: List[float] = []
+    lows: List[float] = []
+    timestamps = []
+    for bar in bars:
+        ts = _resolve_timestamp(bar)
+        timestamps.append(ts)
+        if open_time <= ts <= end_time:
+            highs.append(float(bar.get("h") or bar.get("high") or 0.0))
+            lows.append(float(bar.get("l") or bar.get("low") or 0.0))
+    if not highs and timestamps and all(ts.year <= 1971 for ts in timestamps):
+        sample = bars[: min(len(bars), 30)]
+        highs = [float(b.get("h") or b.get("high") or 0.0) for b in sample]
+        lows = [float(b.get("l") or b.get("low") or 0.0) for b in sample]
+    if not highs or not lows:
+        return None, None
+    return max(highs), min(lows)

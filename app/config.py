@@ -29,6 +29,13 @@ class Settings(BaseSettings):
     target_two_atr_multiplier: float = Field(default=2.0, alias="TARGET_TWO_ATR_MULTIPLIER")
     partial_exit_pct: float = Field(default=0.5, alias="PARTIAL_EXIT_PCT")
     trade_timeout_min: int = Field(default=45, alias="TRADE_TIMEOUT_MIN")
+    entry_spread_bps: int = Field(default=10, alias="ENTRY_SPREAD_BPS")
+    entry_limit_offset_bps: float = Field(default=2.0, alias="ENTRY_LIMIT_OFFSET_BPS")
+    entry_limit_timeout_sec: int = Field(default=2, alias="ENTRY_LIMIT_TIMEOUT_SEC")
+    enable_options_feedback: int = Field(default=1, alias="ENABLE_OPTIONS_FEEDBACK")
+    options_min_volume: int = Field(default=500, alias="OPTIONS_MIN_VOLUME")
+    options_max_iv: float = Field(default=3.0, alias="OPTIONS_MAX_IV")
+    options_cache_ttl_sec: int = Field(default=300, alias="OPTIONS_CACHE_TTL_SEC")
 
     # Session policies
     session_policy_file: str = Field(default="session_policies.yaml", alias="SESSION_POLICY_FILE")

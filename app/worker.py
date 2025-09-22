@@ -1,13 +1,14 @@
 from __future__ import annotations
-import asyncio, time
+import asyncio, os, time
 from typing import Any, Dict, Optional
 
 from .config import settings, symbol_overrides
 from .providers import tradier as t
 from .providers.tradier import TradierHTTPError
+from .providers.polygon_options import option_feedback
 from .state import load_high_water, load_trade_state, save_high_water, save_trade_state
 from . import ledger
-from .metrics import autotrader_signal_total
+from .metrics import autotrader_active_trades, autotrader_signal_total
 from .engine import strategy
 from .engine import risk
 
@@ -15,6 +16,8 @@ from dataclasses import dataclass
 
 _HIGH_WATER: Dict[str, float] = {}
 _ACTIVE_TRADES: Dict[str, Dict[str, Any]] = {}
+_PRICE_CACHE: Dict[str, float] = {}
+_OPTIONS_CACHE: Dict[str, Dict[str, Any]] = {}
 
 
 @dataclass
@@ -27,8 +30,19 @@ class OrderPlan:
     metadata: Dict[str, Any]
 
 
+def _get_setup_float(prefix: str, setup: str, default: Optional[float]) -> Optional[float]:
+    env_val = os.getenv(f"{prefix}_{setup.upper()}")
+    if env_val is None or str(env_val).strip() == "":
+        return default
+    try:
+        return float(env_val)
+    except ValueError:
+        return default
+
+
 def compute_order_plan(sig: Dict[str, Any], cfg) -> OrderPlan:
     symbol = (sig.get("symbol") or "").upper()
+    setup = (sig.get("setup") or "UNKNOWN").upper()
     metadata = sig.get("metadata") or {}
     entry_price = _as_float(metadata.get("entry_price"))
     stop_price = _as_float(metadata.get("stop_price"))
@@ -43,6 +57,11 @@ def compute_order_plan(sig: Dict[str, Any], cfg) -> OrderPlan:
     stop_pct_override = overrides.get("stop_pct", cfg.stop_pct)
     tp_pct_override = overrides.get("tp_pct", cfg.tp_pct)
 
+    risk_per_trade = _get_setup_float("RISK_PER_TRADE", setup, cfg.risk_per_trade_usd)
+    stop_mult = _get_setup_float("RISK_STOP_ATR_MULTIPLIER", setup, cfg.risk_stop_atr_multiplier)
+    target1_mult = _get_setup_float("TARGET_ONE_ATR_MULTIPLIER", setup, cfg.target_one_atr_multiplier)
+    target2_mult = _get_setup_float("TARGET_TWO_ATR_MULTIPLIER", setup, cfg.target_two_atr_multiplier)
+
     if entry_price is None:
         entry_price = _as_float(sig.get("price"))
 
@@ -50,17 +69,17 @@ def compute_order_plan(sig: Dict[str, Any], cfg) -> OrderPlan:
         if stop_pct_override is not None:
             stop_price = entry_price * (1 - float(stop_pct_override))
         elif atr is not None:
-            stop_price = entry_price - cfg.risk_stop_atr_multiplier * atr
+            stop_price = entry_price - (stop_mult or cfg.risk_stop_atr_multiplier) * atr
 
     if target1 is None and entry_price is not None:
         if tp_pct_override is not None:
             target1 = entry_price * (1 + float(tp_pct_override))
         elif atr is not None:
-            target1 = entry_price + cfg.target_one_atr_multiplier * atr
+            target1 = entry_price + (target1_mult or cfg.target_one_atr_multiplier) * atr
 
     if target2 is None and entry_price is not None:
         if atr is not None:
-            target2 = entry_price + cfg.target_two_atr_multiplier * atr
+            target2 = entry_price + (target2_mult or cfg.target_two_atr_multiplier) * atr
         else:
             target2 = target1
 
@@ -68,14 +87,14 @@ def compute_order_plan(sig: Dict[str, Any], cfg) -> OrderPlan:
     qty = max(1, qty)
 
     if (
-        cfg.risk_per_trade_usd
+        risk_per_trade
         and entry_price is not None
         and stop_price is not None
         and entry_price > stop_price
     ):
         stop_distance = entry_price - stop_price
         if stop_distance > 0:
-            risk_qty = int(cfg.risk_per_trade_usd / stop_distance)
+            risk_qty = int(risk_per_trade / stop_distance)
             qty = max(1, risk_qty)
 
     return OrderPlan(
@@ -102,10 +121,12 @@ def register_trade(sig: Dict[str, Any], plan: OrderPlan, cfg, dry_run: bool) -> 
             "qty": plan.qty,
             "partial_exited": state.get("partial_exited", False),
             "entry_ts": time.time(),
+            "setup": sig.get("setup") or "UNKNOWN",
         }
     )
     _ACTIVE_TRADES[symbol] = state
     save_trade_state(_ACTIVE_TRADES)
+    autotrader_active_trades.set(len(_ACTIVE_TRADES))
 
 
 def cleanup_trade(symbol: str) -> None:
@@ -113,6 +134,7 @@ def cleanup_trade(symbol: str) -> None:
     if symbol in _ACTIVE_TRADES:
         _ACTIVE_TRADES.pop(symbol, None)
         save_trade_state(_ACTIVE_TRADES)
+        autotrader_active_trades.set(len(_ACTIVE_TRADES))
 
 
 def _as_float(value: Any) -> Optional[float]:
@@ -131,23 +153,39 @@ async def _get_price(symbol: str, cache: Optional[Dict[str, float]] = None) -> O
     symbol = symbol.upper()
     if cache and symbol in cache:
         return cache[symbol]
-    price = None
-    try:
-        price = await t.last_trade_price(symbol)
-    except TradierHTTPError:
-        price = None
-    if not price:
-        try:
-            q = await t.get_quote(symbol)
-            qq = (q.get("quotes") or {}).get("quote")
-            if isinstance(qq, list):
-                qq = qq[0] if qq else {}
-            price = float((qq or {}).get("last") or 0) or None
-        except Exception:
-            price = None
+    quote = await _get_quote_data(symbol)
+    price = quote.get("last")
     if price and cache is not None:
         cache[symbol] = price
     return price
+
+
+async def _get_quote_data(symbol: str) -> Dict[str, float]:
+    symbol = symbol.upper()
+    try:
+        q = await t.get_quote(symbol)
+    except Exception:
+        q = {}
+    quote = (q.get("quotes") or {}).get("quote") if isinstance(q, dict) else None
+    if isinstance(quote, list):
+        quote = quote[0] if quote else {}
+    quote = quote or {}
+    def _f(key: str) -> Optional[float]:
+        try:
+            val = quote.get(key)
+            return float(val) if val is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    last = _f("last") or _f("close")
+    bid = _f("bid")
+    ask = _f("ask")
+    if last is None:
+        try:
+            last = await t.last_trade_price(symbol)
+        except TradierHTTPError:
+            last = None
+    return {"last": last, "bid": bid, "ask": ask}
 
 
 async def _execute_exit_order(cfg, symbol: str, qty: int, reason: str, dry_run: bool):
@@ -170,6 +208,65 @@ async def _execute_exit_order(cfg, symbol: str, qty: int, reason: str, dry_run: 
     return resp
 
 
+def _determine_entry_order(
+    cfg,
+    plan: OrderPlan,
+    quote: Dict[str, Optional[float]],
+    base_order_type: str,
+) -> tuple[str, Optional[float]]:
+    entry_price = plan.entry_price or quote.get("last")
+    order_type = base_order_type
+    bid = quote.get("bid")
+    ask = quote.get("ask")
+    if entry_price is None:
+        entry_price = quote.get("last")
+    if (
+        entry_price is not None
+        and bid is not None
+        and ask is not None
+        and bid > 0
+        and ask > bid
+    ):
+        mid = (bid + ask) / 2
+        spread_bps = ((ask - bid) / mid) * 10000
+        if spread_bps <= cfg.entry_spread_bps:
+            offset = cfg.entry_limit_offset_bps / 10000
+            limit_price = mid - mid * offset
+            order_type = "limit"
+            entry_price = round(limit_price, 2)
+    return order_type, entry_price
+
+
+async def options_feedback_allows(symbol: str, cfg) -> bool:
+    if not cfg.enable_options_feedback:
+        return True
+    symbol_up = symbol.upper()
+    cache = _OPTIONS_CACHE.get(symbol_up)
+    now = time.time()
+    if cache and now - cache.get("ts", 0) <= cfg.options_cache_ttl_sec:
+        data = cache.get("data")
+    else:
+        try:
+            data = await option_feedback(symbol_up)
+        except Exception as exc:
+            print(f"[worker] options feedback error for {symbol_up}: {exc}")
+            data = None
+        if data:
+            _OPTIONS_CACHE[symbol_up] = {"ts": now, "data": data}
+    if not data:
+        return True
+    call_vol = float(data.get("call_volume") or 0.0)
+    put_vol = float(data.get("put_volume") or 0.0)
+    call_iv = float(data.get("call_iv") or 0.0)
+    min_vol = cfg.options_min_volume or 0
+    if call_vol < min_vol and put_vol < min_vol:
+        return False
+    max_iv = cfg.options_max_iv or 0.0
+    if max_iv and call_iv > max_iv:
+        return False
+    return True
+
+
 async def scan_once(cfg) -> None:
     signals = await strategy.ema_crossover_signals()
     if not signals:
@@ -178,6 +275,12 @@ async def scan_once(cfg) -> None:
         setup = (sig.get("setup") or "UNKNOWN").upper()
         ledger.event("signal_generated", data={"setup": setup, "symbol": sig.get("symbol"), "signal": sig})
         autotrader_signal_total.labels(setup=setup, outcome="generated").inc()
+        if not await options_feedback_allows(sig.get("symbol"), cfg):
+            reason = "options_feedback_block"
+            print(f"[worker] blocked by options feedback: {sig['symbol']}")
+            ledger.event("signal_blocked", data={"setup": setup, "symbol": sig.get("symbol"), "reasons": [reason]})
+            autotrader_signal_total.labels(setup=setup, outcome="options_blocked").inc()
+            continue
         plan = compute_order_plan(sig, cfg)
         risk_check_payload = {**sig, "qty": plan.qty}
         ok, reasons = await risk.evaluate(risk_check_payload)
@@ -201,19 +304,27 @@ async def scan_once(cfg) -> None:
             advanced = None
             stop = plan.stop_price
             take_profit = plan.target2
-            entry_price = plan.entry_price or await _get_price(sig["symbol"])
+            quote = await _get_quote_data(sig["symbol"])
+            order_type, entry_price = _determine_entry_order(
+                cfg,
+                plan,
+                quote,
+                sig.get("type", "market").lower(),
+            )
             plan.entry_price = entry_price
             if stop and take_profit:
                 advanced = "otoco"
+
+            order_price = entry_price if order_type == "limit" else None
 
             resp = await t.place_equity_order(
                 account_id=cfg.tradier_account_id,
                 symbol=sig["symbol"],
                 side=sig.get("side", "buy"),
                 qty=plan.qty,
-                order_type=sig.get("type", "market"),
+                order_type=order_type,
                 duration=sig.get("duration", "day"),
-                price=entry_price,
+                price=order_price,
                 stop=stop,
                 advanced=advanced,
                 take_profit=take_profit,
@@ -390,6 +501,7 @@ async def main() -> None:
             print(f"[worker] restored {len(_ACTIVE_TRADES)} tracked trades")
     except Exception as e:
         print("[worker] trade-state load error:", type(e).__name__, str(e))
+    autotrader_active_trades.set(len(_ACTIVE_TRADES))
     while True:
         try:
             await scan_once(cfg)

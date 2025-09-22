@@ -29,11 +29,14 @@ Quick Start (Sandbox)
       -d '{"symbol":"AAPL","side":"buy","qty":1,"type":"market"}' | jq
      ```
 
-Strategy (Signals)
-- EMA crossover: Buy when 1m EMA20 crosses above EMA50 while price is above EMA50 (momentum continuation).
-- VWAP reclaim: Buy when price reclaims VWAP from below with volume confirmation (configurable cooldown and power-hour gating for tickers such as SPX).
-- Sigma fade: Mean-reversion entry when price sweeps the lower sigma band with supportive trend/volume.
-- HOD failure: Buy a pullback after a fresh intraday high when price holds above VWAP and momentum remains positive.
+- Strategy (Signals)
+  - EMA crossover: Buy when 1m EMA20 crosses above EMA50 while price is above EMA50 (momentum continuation).
+  - VWAP reclaim: Buy when price reclaims VWAP from below with volume confirmation (configurable cooldown and power-hour gating for tickers such as SPX).
+  - Sigma fade: Mean-reversion entry when price sweeps the lower sigma band with supportive trend/volume.
+  - HOD failure: Buy a pullback after a fresh intraday high when price holds above VWAP and momentum remains positive.
+  - Opening range breakout: Momentum breakout after the first 30 minutes when trend and volume confirm.
+  - Trend pullback: Scale into pullbacks toward EMA20 when multi-timeframe trend and regime score remain bullish.
+  - VWAP mean reversion: Fade deep discounts below VWAP when the broader regime remains constructive.
 - Configure symbols and qty in `.env`:
   - `SYMBOLS=AAPL,MSFT,TSLA,SPY,QQQ`
   - `ORDER_QTY=1`
@@ -47,6 +50,8 @@ Position Sizing & Exits
 - Dynamic risk sizing: `RISK_PER_TRADE_USD` defines max risk per trade. Stop distance derives from ATR (configurable via `RISK_STOP_ATR_MULTIPLIER`).
 - Take profits: `TARGET_ONE_ATR_MULTIPLIER` and `TARGET_TWO_ATR_MULTIPLIER` drive partial (default 50%) and final targets; stops move to break-even after the first target fills.
 - Partial exits and timeout: `PARTIAL_EXIT_PCT` controls how much to scale out at target one; `TRADE_TIMEOUT_MIN` forces a flat exit if price stalls.
+- Order entry refinement: `ENTRY_SPREAD_BPS` and `ENTRY_LIMIT_OFFSET_BPS` gate when the worker sends pegged limit orders (with market fallback) to reduce slippage.
+- Options feedback: `ENABLE_OPTIONS_FEEDBACK`, `OPTIONS_MIN_VOLUME`, `OPTIONS_MAX_IV` gate signals based on Polygon options activity (blocks trades when flow/liquidity is weak).
 
 Analytics & Backtesting
 - Inspect recent signal flow: `python -c "from app.analytics.signals import summarize_signals; import json; print(json.dumps(summarize_signals(), indent=2))"`
@@ -54,6 +59,8 @@ Analytics & Backtesting
 - Metrics to chart in Grafana:
   - `autotrader_signal_total{setup="VWAP_RECLAIM",outcome="generated"}` vs `...="approved"`
   - `autotrader_tradier_request_total` / `autotrader_polygon_request_total` for provider health.
+  - `autotrader_signal_total{outcome="options_blocked"}` and `autotrader_active_trades` to monitor option gating and open positions.
+- Example dashboard JSON: `ops/grafana/dashboards/autotrader-signals.json`
 
 Development
 - Install dev dependencies: `pip install -r requirements.txt`

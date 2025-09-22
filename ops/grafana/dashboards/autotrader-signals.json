@@ -1,0 +1,44 @@
+{
+  "title": "Autotrader Signals Overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Signals Generated vs Approved (VWAP)",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "autotrader_signal_total{setup=\"VWAP_RECLAIM\",outcome=\"generated\"}",
+          "legendFormat": "Generated"
+        },
+        {
+          "expr": "autotrader_signal_total{setup=\"VWAP_RECLAIM\",outcome=\"approved\"}",
+          "legendFormat": "Approved"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Options Feedback Blocks",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "increase(autotrader_signal_total{outcome=\"options_blocked\"}[1h])",
+          "legendFormat": "Options Blocked"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Open Trades",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(autotrader_active_trades)",
+          "legendFormat": "Open"
+        }
+      ]
+    }
+  ]
+}

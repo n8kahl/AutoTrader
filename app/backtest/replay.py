@@ -18,6 +18,7 @@ class ReplayResult:
     return_pct: float
     duration_min: float
     ts: float
+    r_multiple: Optional[float] = None
 
 
 async def _default_fetch_bars(symbol: str, start: datetime, end: datetime) -> List[Dict[str, float]]:
@@ -55,7 +56,7 @@ async def replay_signals(
         data = ev.get("data") or {}
         signal = data.get("signal") or {}
         metadata = signal.get("metadata") or {}
-        entry_price = metadata.get("last_price") or signal.get("price")
+        entry_price = metadata.get("entry_price") or metadata.get("last_price") or signal.get("price")
         if not entry_price:
             continue
         entry_price = float(entry_price)
@@ -74,6 +75,18 @@ async def replay_signals(
             continue
         exit_price = float(exit_price)
         duration = (len(bars) - 1) if len(bars) > 1 else horizon_minutes
+        stop_price = metadata.get("stop_price")
+        r_multiple = None
+        if stop_price:
+            try:
+                stop_price = float(stop_price)
+                if entry_price > stop_price:
+                    risk = (entry_price - stop_price) / entry_price
+                    if risk > 0:
+                        r_multiple = ((exit_price - entry_price) / entry_price) / risk
+            except (TypeError, ValueError):
+                r_multiple = None
+
         result = ReplayResult(
             symbol=symbol,
             setup=setup,
@@ -82,6 +95,7 @@ async def replay_signals(
             return_pct=(exit_price - entry_price) / entry_price,
             duration_min=float(duration),
             ts=ts,
+            r_multiple=r_multiple,
         )
         results.append(result)
 
@@ -89,30 +103,36 @@ async def replay_signals(
     per_setup: Dict[str, Dict[str, float]] = {}
 
     for res in results:
-        stats = per_setup.setdefault(res.setup, {"count": 0, "avg_return": 0.0, "win_rate": 0.0})
+        stats = per_setup.setdefault(res.setup, {"count": 0, "avg_return": 0.0, "win_rate": 0.0, "avg_r_multiple": 0.0})
         stats["count"] += 1
         stats["avg_return"] += res.return_pct
         if res.return_pct > 0:
             stats["win_rate"] += 1
+        if res.r_multiple is not None:
+            stats["avg_r_multiple"] += res.r_multiple
 
     for setup, stats in per_setup.items():
         count = stats["count"] or 1
         avg_return = stats["avg_return"] / count
         win_rate = stats["win_rate"] / count
+        avg_r = (stats["avg_r_multiple"] / count) if stats["avg_r_multiple"] and count else 0.0
         summary["per_setup"][setup] = {
             "count": count,
             "avg_return": avg_return,
             "win_rate": win_rate,
+            "avg_r_multiple": avg_r,
         }
 
     if results:
+        r_values = [r.r_multiple for r in results if r.r_multiple is not None]
         summary["overall"] = {
             "count": len(results),
             "avg_return": sum(r.return_pct for r in results) / len(results),
             "win_rate": sum(1 for r in results if r.return_pct > 0) / len(results),
+            "avg_r_multiple": sum(r_values) / len(r_values) if r_values else 0.0,
         }
     else:
-        summary["overall"] = {"count": 0, "avg_return": 0.0, "win_rate": 0.0}
+        summary["overall"] = {"count": 0, "avg_return": 0.0, "win_rate": 0.0, "avg_r_multiple": 0.0}
 
     return summary
 

@@ -5,8 +5,11 @@ import pytest
 
 from app.engine.plays import (
     HodFailurePlay,
+    OpeningRangeBreakoutPlay,
     SigmaFadePlay,
     StrategyContext,
+    TrendPullbackPlay,
+    VWAPMeanRevertPlay,
     VWAPReclaimPlay,
     settings,
 )
@@ -33,6 +36,13 @@ def make_snapshot(**overrides):
         cumulative_delta=None,
         orderbook_imbalance=None,
         atr14=1.5,
+        ema5m_20=101.5,
+        ema5m_50=100.5,
+        ema15m_20=101.0,
+        ema15m_50=100.0,
+        opening_range_high=100.8,
+        opening_range_low=98.8,
+        market_regime_score=0.5,
     )
     base.update(overrides)
     return FeatureSnapshot(**base)
@@ -226,3 +236,78 @@ async def test_hod_failure_emits_signal(monkeypatch):
     assert len(signals) == 1
     sig = signals[0]
     assert sig.setup == "HOD_FAIL"
+
+
+@pytest.mark.asyncio
+async def test_orb_emits_signal(monkeypatch):
+    cfg = SimpleNamespace(
+        default_qty=1,
+        vwap_cooldown_sec=0,
+        vwap_min_rvol=1.0,
+        power_hour_symbols="",
+        power_hour_start="15:00",
+        risk_stop_atr_multiplier=1.2,
+        target_one_atr_multiplier=1.0,
+        target_two_atr_multiplier=2.0,
+        partial_exit_pct=0.5,
+        trade_timeout_min=30,
+        risk_per_trade_usd=100.0,
+        stop_pct=None,
+        tp_pct=None,
+    )
+    monkeypatch.setattr("app.engine.plays.settings", lambda: cfg)
+    play = OpeningRangeBreakoutPlay()
+    ctx = StrategyContext()
+    snapshot = make_snapshot(last_price=102.0, as_of=dt(2024, 5, 10, 15, 0, tzinfo=timezone.utc))
+    signals = play.evaluate(snapshot, session=None, ctx=ctx)
+    assert len(signals) == 1
+
+
+@pytest.mark.asyncio
+async def test_trend_pullback_emits_signal(monkeypatch):
+    cfg = SimpleNamespace(
+        default_qty=1,
+        vwap_cooldown_sec=0,
+        vwap_min_rvol=1.0,
+        power_hour_symbols="",
+        power_hour_start="15:00",
+        risk_stop_atr_multiplier=1.2,
+        target_one_atr_multiplier=1.0,
+        target_two_atr_multiplier=2.0,
+        partial_exit_pct=0.5,
+        trade_timeout_min=30,
+        risk_per_trade_usd=100.0,
+        stop_pct=None,
+        tp_pct=None,
+    )
+    monkeypatch.setattr("app.engine.plays.settings", lambda: cfg)
+    play = TrendPullbackPlay()
+    ctx = StrategyContext()
+    snapshot = make_snapshot(last_price=100.8, ema20=101.0, ema50=99.5, relative_volume=1.2)
+    signals = play.evaluate(snapshot, session=None, ctx=ctx)
+    assert len(signals) == 1
+
+
+@pytest.mark.asyncio
+async def test_vwap_mean_emits_signal(monkeypatch):
+    cfg = SimpleNamespace(
+        default_qty=1,
+        vwap_cooldown_sec=0,
+        vwap_min_rvol=1.0,
+        power_hour_symbols="",
+        power_hour_start="15:00",
+        risk_stop_atr_multiplier=1.2,
+        target_one_atr_multiplier=1.0,
+        target_two_atr_multiplier=2.0,
+        partial_exit_pct=0.5,
+        trade_timeout_min=30,
+        risk_per_trade_usd=100.0,
+        stop_pct=None,
+        tp_pct=None,
+    )
+    monkeypatch.setattr("app.engine.plays.settings", lambda: cfg)
+    play = VWAPMeanRevertPlay()
+    ctx = StrategyContext()
+    snapshot = make_snapshot(last_price=98.5, vwap=100.0, relative_volume=1.2)
+    signals = play.evaluate(snapshot, session=None, ctx=ctx)
+    assert len(signals) == 1

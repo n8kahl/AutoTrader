@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from prometheus_client import Counter, Histogram
+from prometheus_client import Counter, Gauge, Histogram
 
 # AutoTrader-specific Polygon REST request counters.
 autotrader_polygon_request_total = Counter(
@@ -46,6 +46,11 @@ autotrader_signal_total = Counter(
     ("setup", "outcome"),
 )
 
+autotrader_active_trades = Gauge(
+    "autotrader_active_trades",
+    "Current number of active trades tracked by the worker.",
+)
+
 __all__ = [
     "autotrader_polygon_request_total",
     "autotrader_polygon_request_retry_total",
@@ -54,4 +59,5 @@ __all__ = [
     "autotrader_tradier_request_retry_total",
     "autotrader_tradier_request_latency",
     "autotrader_signal_total",
+    "autotrader_active_trades",
 ]
