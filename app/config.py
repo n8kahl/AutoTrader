@@ -19,6 +19,16 @@ class Settings(BaseSettings):
     strategy_interval: str = Field(default="1m", alias="STRATEGY_INTERVAL")  # 1m|5m|1d
     lookback_min: int = Field(default=180, alias="LOOKBACK_MIN")
     lookback_days: int = Field(default=120, alias="LOOKBACK_DAYS")
+    vwap_cooldown_sec: int = Field(default=900, alias="VWAP_COOLDOWN_SEC")
+    power_hour_symbols: str = Field(default="SPX", alias="POWER_HOUR_SYMBOLS")
+    power_hour_start: str = Field(default="15:00", alias="POWER_HOUR_START")
+    vwap_min_rvol: float = Field(default=1.1, alias="VWAP_MIN_RVOL")
+    risk_per_trade_usd: float = Field(default=100.0, alias="RISK_PER_TRADE_USD")
+    risk_stop_atr_multiplier: float = Field(default=1.2, alias="RISK_STOP_ATR_MULTIPLIER")
+    target_one_atr_multiplier: float = Field(default=1.0, alias="TARGET_ONE_ATR_MULTIPLIER")
+    target_two_atr_multiplier: float = Field(default=2.0, alias="TARGET_TWO_ATR_MULTIPLIER")
+    partial_exit_pct: float = Field(default=0.5, alias="PARTIAL_EXIT_PCT")
+    trade_timeout_min: int = Field(default=45, alias="TRADE_TIMEOUT_MIN")
 
     # Session policies
     session_policy_file: str = Field(default="session_policies.yaml", alias="SESSION_POLICY_FILE")

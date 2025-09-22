@@ -40,6 +40,12 @@ autotrader_tradier_request_latency = Histogram(
     ("path",),
 )
 
+autotrader_signal_total = Counter(
+    "autotrader_signal_total",
+    "Signals processed grouped by strategy setup and outcome.",
+    ("setup", "outcome"),
+)
+
 __all__ = [
     "autotrader_polygon_request_total",
     "autotrader_polygon_request_retry_total",
@@ -47,4 +53,5 @@ __all__ = [
     "autotrader_tradier_request_total",
     "autotrader_tradier_request_retry_total",
     "autotrader_tradier_request_latency",
+    "autotrader_signal_total",
 ]

@@ -5,13 +5,12 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from statistics import mean, pstdev
-from typing import Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from ..providers import tradier
 from ..providers.tradier import TradierHTTPError
 from ..providers import polygon
 from ..providers.polygon import PermissionDeniedError
-from . import strategy
 
 
 @dataclass
@@ -31,6 +30,7 @@ class FeatureSnapshot:
     hod: Optional[float]
     lod: Optional[float]
     prev_close: Optional[float]
+    atr14: Optional[float]
     cumulative_delta: Optional[float] = None
     orderbook_imbalance: Optional[float] = None
 
@@ -78,6 +78,7 @@ class FeatureEngine:
                 hod=None,
                 lod=None,
                 prev_close=None,
+                atr14=None,
             )
 
         closes: List[float] = [float(b.get("c") or 0) for b in bars if b.get("c") is not None]
@@ -90,6 +91,9 @@ class FeatureEngine:
         vwap_val = _compute_vwap(closes, volumes)
         sigma = _compute_sigma(closes, vwap_val)
 
+        from . import strategy
+
+
         ema20_series = strategy.ema(closes, 20) if len(closes) >= 20 else []
         ema50_series = strategy.ema(closes, 50) if len(closes) >= 50 else []
         ema20_val = ema20_series[-1] if ema20_series else None
@@ -99,6 +103,9 @@ class FeatureEngine:
         ema20_slope = _compute_slope(ema20_series)
 
         rvol = _compute_relative_volume(volumes)
+
+        prev_close = closes[-2] if len(closes) >= 2 else None
+        atr14 = _compute_atr(bars)
 
         return FeatureSnapshot(
             symbol=symbol.upper(),
@@ -115,7 +122,8 @@ class FeatureEngine:
             relative_volume=rvol,
             hod=max(highs) if highs else None,
             lod=min(lows) if lows else None,
-            prev_close=None,
+            prev_close=prev_close,
+            atr14=atr14,
         )
 
 
@@ -167,3 +175,23 @@ def _resolve_timestamp(bar: dict) -> datetime:
     if isinstance(ts, (int, float)):
         return datetime.fromtimestamp(float(ts) / 1000.0, tz=timezone.utc)
     return datetime.now(timezone.utc)
+
+
+def _compute_atr(bars: List[Dict[str, Any]], period: int = 14) -> Optional[float]:
+    if len(bars) < period + 1:
+        return None
+    trs: List[float] = []
+    prev_close: Optional[float] = None
+    for bar in bars[-(period + 1):]:
+        high = float(bar.get("h") or bar.get("high") or 0.0)
+        low = float(bar.get("l") or bar.get("low") or 0.0)
+        close = float(bar.get("c") or bar.get("close") or 0.0)
+        if prev_close is None:
+            tr = high - low
+        else:
+            tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
+        trs.append(tr)
+        prev_close = close
+    if len(trs) < period:
+        return None
+    return sum(trs[-period:]) / period
