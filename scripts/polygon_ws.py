@@ -19,7 +19,7 @@ from app.db import get_engine
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s %(message)s")
 logger = logging.getLogger("polygon_ws")
 
-DEFAULT_SYMBOLS = ["SPX", "NDX", "SPY", "QQQ"]
+DEFAULT_SYMBOLS = ["SPY", "QQQ", "SPX", "NDX"]
 INDEX_SYMBOLS = {"SPX", "NDX"}
 
 WS_URL = os.getenv("POLYGON_WS_URL", "wss://socket.polygon.io/stocks")
@@ -128,6 +128,10 @@ class PolygonStreamer:
         else:
             events = [payload]
         for event in events:
+            if event.get("ev") == "status":
+                logger.warning("Status event: %s", event)
+                self._handle_status(event)
+                continue
             record = self._parse_event(event)
             if record:
                 try:
@@ -203,6 +207,22 @@ class PolygonStreamer:
             "source": SOURCE_NAME,
         }
         return record
+
+    def _handle_status(self, event: Dict[str, Any]) -> None:
+        """Handle Polygon status frames (unauthorized subscriptions, etc.)."""
+        message = (event.get("message") or "").lower()
+        params = event.get("params") or ""
+        if "unauthorized" in message and params:
+            symbol = params.split(".")[-1]
+            if symbol and symbol in self.symbols:
+                logger.warning("Removing symbol %s due to unauthorized subscription", symbol)
+                self.symbols = [s for s in self.symbols if s != symbol]
+                # Force reconnect with cleaned list
+                if self._ws:
+                    try:
+                        self._ws.close()
+                    except Exception:
+                        pass
 
 
 def main() -> None:
