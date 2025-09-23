@@ -16,6 +16,16 @@ All other work is paused until the scalper is complete.
 
 ## Database Backbone
 
+- The stack now includes a TimescaleDB/Postgres container (`db` service in `docker-compose.yml`).
+- Default credentials are provided in `.env.example` (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DATABASE_URL`). Copy the template to `.env` and adjust before starting the stack.
+- After bringing the compose stack up, initialize the schema once:
+  ```
+  docker compose run --rm api python -m app.db.migrate
+  ```
+- Hypertables created: `ticks`, `bars_1m`. Relational tables: `features`, `signals`, `orders`, `fills`, `account_snapshots`, `session_labels`.
+
+## Database Backbone
+
 - The stack now ships with a TimescaleDB/Postgres container (`db` service in `docker-compose.yml`).
 - Default credentials live in `.env.example` (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DATABASE_URL`). Copy the template to `.env` and adjust as needed before starting containers.
 - After bringing the compose stack up, run the schema bootstrap once:
