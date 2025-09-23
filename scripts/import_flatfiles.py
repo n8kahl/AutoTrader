@@ -133,10 +133,11 @@ def ingest_object(client, bucket: str, key: str, symbols: Optional[Iterable[str]
     engine = get_engine()
     total = 0
     batch: List[Dict[str, object]] = []
-    symbol_filter = {s.upper() for s in symbols} if symbols else None
+    symbol_filter = [s.upper() for s in symbols] if symbols else None
 
     for record in stream_records(data_stream):
-        if symbol_filter and record["symbol"].upper() not in symbol_filter:
+        sym = record["symbol"].upper()
+        if symbol_filter and not any(sym.startswith(pref) for pref in symbol_filter):
             continue
         batch.append(record)
         if len(batch) >= BATCH_SIZE:

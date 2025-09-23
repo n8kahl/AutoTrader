@@ -21,6 +21,7 @@ All other work is paused until the scalper is complete.
 - After bringing the compose stack up, run the schema bootstrap once:
   ```
 - Dates accept `YYYY-MM-DD`, `YYYY/MM/DD`, or `YYYYMMDD` and resolve to the flat-file folder structure (`options/seconds/YYYY/MM/DD/`).
+- When `--symbols` is provided, contracts whose ticker begins with any of the supplied prefixes are imported (e.g., `SPX...` contracts for SPX options).
   docker compose run --rm api python -m app.db.migrate
   ```
 - Dates accept `YYYY-MM-DD`, `YYYY/MM/DD`, or `YYYYMMDD` and resolve to the flat-file folder structure (`options/seconds/YYYY/MM/DD/`).
