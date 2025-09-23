@@ -44,6 +44,7 @@ All other work is paused until the scalper is complete.
   python scripts/import_flatfiles.py --date 2025-09-20 --symbols SPX,NDX,SPY,QQQ
   ```
 - Dates accept `YYYY-MM-DD`, `YYYY/MM/DD`, or `YYYYMMDD` and resolve to the flat-file folder structure (`options/seconds/YYYY/MM/DD/`).
+- Symbol filters apply to both the raw ticker and the ticker without the OPRA prefix (e.g., `O:SPY...` matches the `SPY` prefix).
 - Required environment variables:
   - `POLYGON_FLATFILES_ACCESS_KEY`
   - `POLYGON_FLATFILES_SECRET_KEY`

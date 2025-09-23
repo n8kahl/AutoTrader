@@ -141,7 +141,11 @@ def ingest_object(client, bucket: str, key: str, symbols: Optional[Iterable[str]
 
     for record in stream_records(data_stream):
         sym = record["symbol"].upper()
-        if symbol_filter and not any(sym.startswith(pref) for pref in symbol_filter):
+        sym_clean = sym.split(":", 1)[-1]
+        if symbol_filter and not any(
+            sym.startswith(pref) or sym_clean.startswith(pref)
+            for pref in symbol_filter
+        ):
             continue
         batch.append(record)
         if len(batch) >= BATCH_SIZE:
