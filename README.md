@@ -31,6 +31,22 @@ All other work is paused until the scalper is complete.
 - Ticks are upserted into the `ticks` hypertable, forming the real-time backbone for the SPX/NDX scalper.
 - Polygon may close the connection if your key lacks websocket/index entitlements. When that happens the streamer logs the status event, removes the offending symbol, and keeps ingesting the remaining ones (SPY/QQQ by default).
 
+## Historical Backfill (Flat Files)
+
+- Use `scripts/import_flatfiles.py` to ingest Polygon flat-file aggregates into TimescaleDB. Example:
+  ```
+  POLYGON_FLATFILES_ACCESS_KEY=... \
+  POLYGON_FLATFILES_SECRET_KEY=... \
+  POLYGON_FLATFILES_ENDPOINT=https://files.polygon.io \
+  python scripts/import_flatfiles.py --date 2025-09-20 --symbols SPX,NDX,SPY,QQQ
+  ```
+- Required environment variables:
+  - `POLYGON_FLATFILES_ACCESS_KEY`
+  - `POLYGON_FLATFILES_SECRET_KEY`
+  - `POLYGON_FLATFILES_ENDPOINT`
+  - `POLYGON_FLATFILES_BUCKET` (defaults to `flatfiles`)
+- The script streams CSV/CSV.GZ objects from S3, parses them, and upserts into the `ticks` hypertable with `source=polygon_flatfile`.
+
 Components
 - `api`: FastAPI service with health, provider checks, dry-run order endpoint, and Prometheus metrics.
 - `worker`: Background loop that scans and (optionally) places orders according to simple rules (dry-run by default). Emits structured signal events for later analysis.
