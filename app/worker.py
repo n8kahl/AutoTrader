@@ -110,6 +110,7 @@ def compute_order_plan(sig: Dict[str, Any], cfg) -> OrderPlan:
 
 def register_trade(sig: Dict[str, Any], plan: OrderPlan, cfg, dry_run: bool) -> None:
     symbol = (sig.get("symbol") or "").upper()
+    source_symbol = (sig.get("source_symbol") or symbol).upper()
     if not symbol or plan.entry_price is None:
         return
     state = _ACTIVE_TRADES.get(symbol, {}).copy()
@@ -123,6 +124,7 @@ def register_trade(sig: Dict[str, Any], plan: OrderPlan, cfg, dry_run: bool) -> 
             "partial_exited": state.get("partial_exited", False),
             "entry_ts": time.time(),
             "setup": sig.get("setup") or "UNKNOWN",
+            "source_symbol": source_symbol,
         }
     )
     _ACTIVE_TRADES[symbol] = state
@@ -281,29 +283,68 @@ async def scan_once(cfg) -> None:
     if not signals:
         print("[worker] no signals")
     for sig in signals:
+        trade_symbol = (sig.get("symbol") or "").upper()
+        source_symbol = (sig.get("source_symbol") or trade_symbol).upper()
+        display_symbol = source_symbol if source_symbol == trade_symbol else f"{source_symbol}->{trade_symbol}"
         setup = (sig.get("setup") or "UNKNOWN").upper()
-        ledger.event("signal_generated", data={"setup": setup, "symbol": sig.get("symbol"), "signal": sig})
-        storage.record_signal(sig.get("symbol", ""), setup, "generated", time.time(), None, sig.get("metadata") or {})
+        ledger.event(
+            "signal_generated",
+            data={
+                "setup": setup,
+                "symbol": trade_symbol,
+                "source_symbol": source_symbol,
+                "execution_symbol": trade_symbol,
+                "signal": sig,
+            },
+        )
+        storage.record_signal(source_symbol, setup, "generated", time.time(), None, sig.get("metadata") or {})
         autotrader_signal_total.labels(setup=setup, outcome="generated").inc()
-        if not await options_feedback_allows(sig.get("symbol"), cfg):
+        if not await options_feedback_allows(trade_symbol, cfg):
             reason = "options_feedback_block"
-            print(f"[worker] blocked by options feedback: {sig['symbol']}")
-            ledger.event("signal_blocked", data={"setup": setup, "symbol": sig.get("symbol"), "reasons": [reason]})
-            storage.record_signal(sig.get("symbol", ""), setup, reason, time.time(), [reason], sig.get("metadata") or {})
+            print(f"[worker] blocked by options feedback: {display_symbol}")
+            ledger.event(
+                "signal_blocked",
+                data={
+                    "setup": setup,
+                    "symbol": trade_symbol,
+                    "source_symbol": source_symbol,
+                    "execution_symbol": trade_symbol,
+                    "reasons": [reason],
+                },
+            )
+            storage.record_signal(source_symbol, setup, reason, time.time(), [reason], sig.get("metadata") or {})
             autotrader_signal_total.labels(setup=setup, outcome="options_blocked").inc()
             continue
         plan = compute_order_plan(sig, cfg)
         risk_check_payload = {**sig, "qty": plan.qty}
         ok, reasons = await risk.evaluate(risk_check_payload)
         if not ok:
-            print(f"[worker] blocked by risk: {sig['symbol']} — {', '.join(reasons)}")
-            ledger.event("signal_blocked", data={"setup": setup, "symbol": sig.get("symbol"), "reasons": reasons})
-            storage.record_signal(sig.get("symbol", ""), setup, "risk_blocked", time.time(), reasons, sig.get("metadata") or {})
+            print(f"[worker] blocked by risk: {display_symbol} — {', '.join(reasons)}")
+            ledger.event(
+                "signal_blocked",
+                data={
+                    "setup": setup,
+                    "symbol": trade_symbol,
+                    "source_symbol": source_symbol,
+                    "execution_symbol": trade_symbol,
+                    "reasons": reasons,
+                },
+            )
+            storage.record_signal(source_symbol, setup, "risk_blocked", time.time(), reasons, sig.get("metadata") or {})
             autotrader_signal_total.labels(setup=setup, outcome="risk_blocked").inc()
             continue
-        print(f"[worker] PASS risk: {sig}")
-        ledger.event("signal_approved", data={"setup": setup, "symbol": sig.get("symbol"), "signal": sig})
-        storage.record_signal(sig.get("symbol", ""), setup, "approved", time.time(), None, sig.get("metadata") or {})
+        print(f"[worker] PASS risk: {display_symbol}")
+        ledger.event(
+            "signal_approved",
+            data={
+                "setup": setup,
+                "symbol": trade_symbol,
+                "source_symbol": source_symbol,
+                "execution_symbol": trade_symbol,
+                "signal": sig,
+            },
+        )
+        storage.record_signal(source_symbol, setup, "approved", time.time(), None, sig.get("metadata") or {})
         autotrader_signal_total.labels(setup=setup, outcome="approved").inc()
         if cfg.dry_run:
             print("[worker] DRY_RUN=1 — not sending order")
@@ -317,7 +358,7 @@ async def scan_once(cfg) -> None:
             advanced = None
             stop = plan.stop_price
             take_profit = plan.target2
-            quote = await _get_quote_data(sig["symbol"])
+            quote = await _get_quote_data(trade_symbol)
             order_type, entry_price = _determine_entry_order(
                 cfg,
                 plan,
@@ -332,7 +373,7 @@ async def scan_once(cfg) -> None:
 
             resp = await t.place_equity_order(
                 account_id=cfg.tradier_account_id,
-                symbol=sig["symbol"],
+                symbol=trade_symbol,
                 side=sig.get("side", "buy"),
                 qty=plan.qty,
                 order_type=order_type,
@@ -350,7 +391,8 @@ async def scan_once(cfg) -> None:
                     "order_placed",
                     data={
                         "id": oid,
-                        "symbol": sig["symbol"],
+                        "symbol": trade_symbol,
+                        "source_symbol": source_symbol,
                         "side": sig.get("side", "buy"),
                         "qty": plan.qty,
                         "advanced": advanced,

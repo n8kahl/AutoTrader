@@ -1,3 +1,5 @@
+from typing import Dict
+
 from pydantic_settings import BaseSettings
 from pydantic import Field
 import os, re
@@ -14,13 +16,13 @@ class Settings(BaseSettings):
     port: int = Field(default=8080, alias="PORT")
 
     # Strategy
-    symbols: str = Field(default="AAPL,MSFT,TSLA,SPY,QQQ", alias="SYMBOLS")
+    symbols: str = Field(default="TSLA,SPY,QQQ,SPX,NDX", alias="SYMBOLS")
     default_qty: int = Field(default=1, alias="ORDER_QTY")
     strategy_interval: str = Field(default="1m", alias="STRATEGY_INTERVAL")  # 1m|5m|1d
     lookback_min: int = Field(default=180, alias="LOOKBACK_MIN")
     lookback_days: int = Field(default=120, alias="LOOKBACK_DAYS")
     vwap_cooldown_sec: int = Field(default=900, alias="VWAP_COOLDOWN_SEC")
-    power_hour_symbols: str = Field(default="SPX", alias="POWER_HOUR_SYMBOLS")
+    power_hour_symbols: str = Field(default="SPX,NDX", alias="POWER_HOUR_SYMBOLS")
     power_hour_start: str = Field(default="15:00", alias="POWER_HOUR_START")
     vwap_min_rvol: float = Field(default=1.1, alias="VWAP_MIN_RVOL")
     risk_per_trade_usd: float = Field(default=100.0, alias="RISK_PER_TRADE_USD")
@@ -40,10 +42,13 @@ class Settings(BaseSettings):
     # Session policies
     session_policy_file: str = Field(default="session_policies.yaml", alias="SESSION_POLICY_FILE")
 
+    # Symbol handling
+    symbol_execution_map: str = Field(default="", alias="SYMBOL_EXECUTION_MAP")
+
     # Risk Guardrails
     risk_max_concurrent: int = Field(default=3, alias="RISK_MAX_CONCURRENT")
     risk_max_open_orders: int = Field(default=5, alias="RISK_MAX_OPEN_ORDERS")
-    risk_max_positions_per_symbol: int = Field(default=1, alias="RISK_MAX_POSITIONS_PER_SYMBOL")
+    risk_max_positions_per_symbol: int = Field(default=0, alias="RISK_MAX_POSITIONS_PER_SYMBOL")
     risk_max_order_notional_usd: float | None = Field(default=None, alias="RISK_MAX_ORDER_NOTIONAL_USD")
     trading_window_start: str = Field(default="09:31", alias="TRADING_WINDOW_START")  # America/New_York
     trading_window_end: str = Field(default="15:55", alias="TRADING_WINDOW_END")
@@ -62,6 +67,9 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+
+    def execution_map(self) -> Dict[str, str]:
+        return _parse_symbol_map(self.symbol_execution_map)
 
 
 def settings() -> Settings:
@@ -102,3 +110,20 @@ def symbol_overrides(symbol: str) -> dict:
         except Exception:
             continue
     return out
+
+
+def _parse_symbol_map(raw: str) -> Dict[str, str]:
+    mapping: Dict[str, str] = {}
+    if not raw:
+        return mapping
+    for pair in raw.split(","):
+        pair = pair.strip()
+        if not pair or ":" not in pair:
+            continue
+        src, dst = pair.split(":", 1)
+        src = src.strip().upper()
+        dst = dst.strip().upper()
+        if not src or not dst:
+            continue
+        mapping[src] = dst
+    return mapping

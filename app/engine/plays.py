@@ -19,16 +19,25 @@ class StrategySignal:
     qty: int
     order_type: str = "market"
     metadata: Dict[str, Any] = field(default_factory=dict)
+    execution_symbol: Optional[str] = None
 
     def to_order(self) -> Dict[str, Any]:
-        return {
-            "symbol": self.symbol,
+        source_symbol = (self.symbol or "").upper()
+        execution_symbol = (self.execution_symbol or self.symbol or "").upper()
+        meta = dict(self.metadata)
+        meta.setdefault("source_symbol", source_symbol)
+        meta.setdefault("execution_symbol", execution_symbol)
+        payload = {
+            "symbol": execution_symbol,
+            "source_symbol": source_symbol,
             "side": self.side,
             "qty": self.qty,
             "type": self.order_type,
             "setup": self.setup,
-            **self.metadata,
+            "metadata": meta,
         }
+        payload.update(meta)
+        return payload
 
 
 @dataclass
@@ -422,12 +431,16 @@ class StrategyEngine:
             current_session = None
 
         out: List[Dict[str, Any]] = []
+        exec_map = cfg.execution_map()
+
         for sym in syms:
             snapshot = await self.feature_engine.snapshot(sym)
             for play in self.plays:
                 if not play.allowed_in(current_session):
                     continue
                 for sig in play.evaluate(snapshot, current_session, self.ctx):
+                    mapped_symbol = exec_map.get(sig.symbol.upper(), sig.symbol.upper())
+                    sig.execution_symbol = mapped_symbol
                     out.append(sig.to_order())
         return out
 

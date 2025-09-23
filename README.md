@@ -4,6 +4,26 @@ Purpose
 - Automate entries based on your existing trading setups with tight risk controls.
 - Run on a single VM with Docker Compose. Tradier supplies equity quotes/bars + order routing; Polygon powers options analytics (IV, OI, chains).
 
+## Current Focus — SPX/NDX Scalper
+
+- The roadmap, TODOs, and progress log now live under `docs/` and track the build of a real-time SPX/NDX scalping bot (executed via SPY/QQQ proxies).
+- See:
+  - `docs/ROADMAP.md`
+  - `docs/TODO.md`
+  - `docs/PROGRESS.md`
+
+All other work is paused until the scalper is complete.
+
+## Database Backbone
+
+- The stack now ships with a TimescaleDB/Postgres container (`db` service in `docker-compose.yml`).
+- Default credentials live in `.env.example` (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DATABASE_URL`). Copy the template to `.env` and adjust as needed before starting containers.
+- After bringing the compose stack up, run the schema bootstrap once:
+  ```
+  docker compose run --rm api python -m app.db.migrate
+  ```
+- Hypertables created: `ticks`, `bars_1m`, plus relational tables for `features`, `signals`, `orders`, `fills`, `account_snapshots`, and `session_labels`.
+
 Components
 - `api`: FastAPI service with health, provider checks, dry-run order endpoint, and Prometheus metrics.
 - `worker`: Background loop that scans and (optionally) places orders according to simple rules (dry-run by default). Emits structured signal events for later analysis.
@@ -38,13 +58,14 @@ Quick Start (Sandbox)
   - Trend pullback: Scale into pullbacks toward EMA20 when multi-timeframe trend and regime score remain bullish.
   - VWAP mean reversion: Fade deep discounts below VWAP when the broader regime remains constructive.
 - Configure symbols and qty in `.env`:
-  - `SYMBOLS=AAPL,MSFT,TSLA,SPY,QQQ`
+  - `SYMBOLS=TSLA,SPY,QQQ,SPX,NDX`
   - `ORDER_QTY=1`
   - `STRATEGY_INTERVAL=1m|5m|1d`
   - `VWAP_COOLDOWN_SEC=900` (minimum seconds between VWAP signals per symbol)
   - `VWAP_MIN_RVOL=1.1` (minimum relative volume)
   - `POWER_HOUR_SYMBOLS=SPX` with `POWER_HOUR_START=15:00` to restrict certain plays to power hour.
 - All signals are journaled to `state/events.jsonl` with Prometheus counters exposed via `autotrader_signal_total{setup,outcome}`.
+- If you want to trigger on SPX/NDX but execute via SPY/QQQ, map them with `SYMBOL_EXECUTION_MAP=SPX:SPY,NDX:QQQ` (default provided).
 
 Position Sizing & Exits
 - Dynamic risk sizing: `RISK_PER_TRADE_USD` defines max risk per trade. Stop distance derives from ATR (configurable via `RISK_STOP_ATR_MULTIPLIER`).
@@ -70,6 +91,7 @@ Development
 Risk Guardrails
 - Time window in America/New_York: `TRADING_WINDOW_START=09:31`, `TRADING_WINDOW_END=15:55`
 - Concurrency: `RISK_MAX_CONCURRENT=3`, `RISK_MAX_OPEN_ORDERS=5`
+- Per-symbol cap: `RISK_MAX_POSITIONS_PER_SYMBOL=0` (set >0 to enforce a limit)
 - Optional limits: `SYMBOL_WHITELIST`, `SYMBOL_BLACKLIST`, `MIN_CASH_USD`
 - The worker prints reasons when a signal is blocked by risk and honours dynamic sizing when calculating quantities.
 

@@ -98,8 +98,10 @@ async def evaluate(signal: Dict[str, Any]) -> Tuple[bool, List[str]]:
 
     # Per-symbol limits
     same_sym_pos = [x for x in open_pos if (x.get("symbol") or "").upper() == sym]
-    if len(same_sym_pos) >= cfg.risk_max_positions_per_symbol:
-        reasons.append(f"Max positions for {sym} reached: {cfg.risk_max_positions_per_symbol}")
+    max_per_symbol = cfg.risk_max_positions_per_symbol
+    if max_per_symbol is not None and max_per_symbol > 0:
+        if len(same_sym_pos) >= max_per_symbol:
+            reasons.append(f"Max positions for {sym} reached: {max_per_symbol}")
 
     # Notional cap
     # Notional cap (symbol override NOTIONAL_<SYM> takes precedence)
