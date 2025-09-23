@@ -75,14 +75,18 @@ def iter_objects(client, bucket: str, prefix: str) -> Iterator[Dict[str, str]]:
 
 def parse_row(row: Dict[str, str]) -> Optional[Dict[str, object]]:
     """Map common flat-file columns to the ticks table schema."""
-    ts_raw = row.get("timestamp") or row.get("ts") or row.get("t")
+    ts_raw = row.get("timestamp") or row.get("ts") or row.get("t") or row.get("window_start")
     if not ts_raw:
         return None
     try:
-        ts_ms = int(ts_raw)
+        ts_int = int(ts_raw)
     except ValueError:
         return None
-    ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+    # Some datasets provide milliseconds, others nanoseconds. Detect scale.
+    if ts_int > 10**15:  # nanoseconds
+        ts = datetime.fromtimestamp(ts_int / 1_000_000_000, tz=timezone.utc)
+    else:  # milliseconds or seconds
+        ts = datetime.fromtimestamp(ts_int / 1000 if ts_int > 10**11 else ts_int, tz=timezone.utc)
     symbol = row.get("ticker") or row.get("symbol") or row.get("sym")
     if not symbol:
         return None
