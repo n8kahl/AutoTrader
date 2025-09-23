@@ -22,7 +22,7 @@ logger = logging.getLogger("polygon_ws")
 DEFAULT_SYMBOLS = ["SPY", "QQQ", "SPX", "NDX"]
 INDEX_SYMBOLS = {"SPX", "NDX"}
 
-WS_URL = os.getenv("POLYGON_WS_URL", "wss://socket.polygon.io/stocks")
+WS_URL = os.getenv("POLYGON_WS_URL", "wss://socket.polygon.io/options")
 API_KEY = os.getenv("POLYGON_WS_KEY") or os.getenv("POLYGON_API_KEY")
 STREAM_SYMBOLS = [s.strip().upper() for s in os.getenv("POLYGON_WS_SYMBOLS", ",".join(DEFAULT_SYMBOLS)).split(",") if s.strip()]
 BATCH_SIZE = int(os.getenv("POLYGON_WS_BATCH", "100"))
@@ -56,9 +56,8 @@ INSERT_SQL = text(
 
 def map_channel(symbol: str) -> str:
     symbol = symbol.upper()
-    if symbol in INDEX_SYMBOLS or symbol.startswith("X"):
-        return f"XA.{symbol}"
-    return f"A.{symbol}"
+    # For the options websocket, aggregated per-second bars stream via XA.* channels.
+    return f"XA.{symbol}"
 
 
 class PolygonStreamer:

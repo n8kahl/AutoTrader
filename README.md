@@ -26,10 +26,10 @@ All other work is paused until the scalper is complete.
 
 ## Polygon Websocket Streamer
 
-- Service `streamer` connects to Polygon’s stocks websocket and ingests per-second aggregates for `POLYGON_WS_SYMBOLS` (default: SPX, NDX, SPY, QQQ).
+- Service `streamer` connects to Polygon’s options websocket (default `wss://socket.polygon.io/options`) and ingests per-second aggregates for `POLYGON_WS_SYMBOLS` (default: SPX, NDX, SPY, QQQ).
 - Configure the streamer in `.env` via `POLYGON_WS_URL`, `POLYGON_WS_SYMBOLS`, `POLYGON_WS_BATCH`, `POLYGON_WS_FLUSH_INTERVAL`, and supply `POLYGON_WS_KEY` (or reuse `POLYGON_API_KEY`).
 - Ticks are upserted into the `ticks` hypertable, forming the real-time backbone for the SPX/NDX scalper.
-- Polygon may close the connection if your key lacks index entitlements (`XA.*`). When that happens the streamer logs the status event, removes the offending symbol, and keeps ingesting the remaining ones (SPY/QQQ by default).
+- Polygon may close the connection if your key lacks websocket/index entitlements. When that happens the streamer logs the status event, removes the offending symbol, and keeps ingesting the remaining ones (SPY/QQQ by default).
 
 Components
 - `api`: FastAPI service with health, provider checks, dry-run order endpoint, and Prometheus metrics.
