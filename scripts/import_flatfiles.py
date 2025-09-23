@@ -175,7 +175,22 @@ def run(prefix: str, date: Optional[str], symbols: Optional[List[str]]) -> None:
 
     prefix_norm = prefix.strip("/")
     if date:
-        prefix_norm = f"{prefix_norm}/{date}"
+        fmt_date = date
+        ts_path = None
+        for fmt in ("%Y-%m-%d", "%Y/%m/%d",
+                    "%Y%m%d"):
+            try:
+                dt = datetime.strptime(date, fmt)
+                ts_path = f"{dt.year:04d}/{dt.month:02d}/{dt.day:02d}"
+                fmt_date = dt.strftime("%Y-%m-%d")
+                break
+            except ValueError:
+                continue
+        if ts_path is None:
+            logger.warning("Unrecognized date format '%s'; using literal folder name", date)
+            ts_path = date
+        prefix_norm = f"{prefix_norm}/{ts_path}"
+        logger.info("Resolved date %s to prefix fragment %s", fmt_date, ts_path)
     if prefix_norm and not prefix_norm.endswith("/"):
         prefix_norm += "/"
 

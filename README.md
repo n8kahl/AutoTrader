@@ -20,8 +20,10 @@ All other work is paused until the scalper is complete.
 - Default credentials live in `.env.example` (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DATABASE_URL`). Copy the template to `.env` and adjust as needed before starting containers.
 - After bringing the compose stack up, run the schema bootstrap once:
   ```
+- Dates accept `YYYY-MM-DD`, `YYYY/MM/DD`, or `YYYYMMDD` and resolve to the flat-file folder structure (`options/seconds/YYYY/MM/DD/`).
   docker compose run --rm api python -m app.db.migrate
   ```
+- Dates accept `YYYY-MM-DD`, `YYYY/MM/DD`, or `YYYYMMDD` and resolve to the flat-file folder structure (`options/seconds/YYYY/MM/DD/`).
 - Hypertables created: `ticks`, `bars_1m`, plus relational tables for `features`, `signals`, `orders`, `fills`, `account_snapshots`, and `session_labels`.
 
 ## Polygon Websocket Streamer
@@ -40,12 +42,14 @@ All other work is paused until the scalper is complete.
   POLYGON_FLATFILES_ENDPOINT=https://files.polygon.io \
   python scripts/import_flatfiles.py --date 2025-09-20 --symbols SPX,NDX,SPY,QQQ
   ```
+- Dates accept `YYYY-MM-DD`, `YYYY/MM/DD`, or `YYYYMMDD` and resolve to the flat-file folder structure (`options/seconds/YYYY/MM/DD/`).
 - Required environment variables:
   - `POLYGON_FLATFILES_ACCESS_KEY`
   - `POLYGON_FLATFILES_SECRET_KEY`
   - `POLYGON_FLATFILES_ENDPOINT`
   - `POLYGON_FLATFILES_BUCKET` (defaults to `flatfiles`)
 - The script streams CSV/CSV.GZ objects from S3, parses them, and upserts into the `ticks` hypertable with `source=polygon_flatfile`.
+
 
 Components
 - `api`: FastAPI service with health, provider checks, dry-run order endpoint, and Prometheus metrics.
@@ -67,10 +71,12 @@ Quick Start (Sandbox)
    - Metrics: `http://YOUR_HOST:8080/metrics`
    - Dry‑run trade (Terminal):
      ```
+- Dates accept `YYYY-MM-DD`, `YYYY/MM/DD`, or `YYYYMMDD` and resolve to the flat-file folder structure (`options/seconds/YYYY/MM/DD/`).
      curl -s -X POST http://YOUR_HOST:8080/api/v1/trade/dryrun \
       -H 'Content-Type: application/json' \
       -d '{"symbol":"AAPL","side":"buy","qty":1,"type":"market"}' | jq
      ```
+- Dates accept `YYYY-MM-DD`, `YYYY/MM/DD`, or `YYYYMMDD` and resolve to the flat-file folder structure (`options/seconds/YYYY/MM/DD/`).
 
 - Strategy (Signals)
   - EMA crossover: Buy when 1m EMA20 crosses above EMA50 while price is above EMA50 (momentum continuation).
