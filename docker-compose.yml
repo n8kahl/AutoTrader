@@ -4,6 +4,8 @@ services:
     container_name: autotrader_api
     env_file:
       - .env
+    environment:
+      PYTHONPATH: /srv
     ports:
       - "8080:8080"
     restart: unless-stopped
@@ -21,6 +23,8 @@ services:
     command: python -m app.worker
     env_file:
       - .env
+    environment:
+      PYTHONPATH: /srv
     restart: unless-stopped
     depends_on:
       db:
@@ -34,6 +38,8 @@ services:
     command: python scripts/polygon_ws.py
     env_file:
       - .env
+    environment:
+      PYTHONPATH: /srv
     restart: unless-stopped
     depends_on:
       db:
