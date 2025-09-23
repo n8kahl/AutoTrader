@@ -1,7 +1,7 @@
 # TODO — SPX/NDX Scalper Build
 
 - [ ] Add TimescaleDB container + migrations (ticks, features, signals, orders, fills).
-- [ ] Implement `scripts/polygon_ws.py` to stream SPX/NDX second aggregates into Timescale with retry/backoff and Prometheus metrics.
+- [x] Implement `scripts/polygon_ws.py` to stream SPX/NDX second aggregates into Timescale with retry/backoff and batching.
 - [ ] Write `scripts/import_flatfiles.py` to sync Polygon flat files (SPX, NDX, SPY, QQQ) and load them into the new tables.
 - [ ] Extend `FeatureEngine` for 1s+1m blended features (VWAP, sigma, ATR, EMA slopes, cumulative delta).
 - [ ] Create regime labeling job (`scripts/label_regimes.py`) that classifies each session (trend vs consolidation) and stores results.

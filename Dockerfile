@@ -12,10 +12,10 @@ COPY requirements.txt ./
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY app ./app
+COPY scripts ./scripts
 COPY run.sh ./run.sh
 RUN chmod +x ./run.sh
 
 EXPOSE 8080
 ENTRYPOINT ["tini","--"]
 CMD ["./run.sh"]
-

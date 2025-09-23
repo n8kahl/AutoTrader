@@ -28,6 +28,19 @@ services:
     volumes:
       - ./state:/srv/state
 
+  streamer:
+    build: .
+    container_name: autotrader_streamer
+    command: python scripts/polygon_ws.py
+    env_file:
+      - .env
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./state:/srv/state
+
   db:
     image: timescale/timescaledb:2.14.2-pg15
     container_name: autotrader_db

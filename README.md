@@ -16,23 +16,19 @@ All other work is paused until the scalper is complete.
 
 ## Database Backbone
 
-- The stack now includes a TimescaleDB/Postgres container (`db` service in `docker-compose.yml`).
-- Default credentials are provided in `.env.example` (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DATABASE_URL`). Copy the template to `.env` and adjust before starting the stack.
-- After bringing the compose stack up, initialize the schema once:
-  ```
-  docker compose run --rm api python -m app.db.migrate
-  ```
-- Hypertables created: `ticks`, `bars_1m`. Relational tables: `features`, `signals`, `orders`, `fills`, `account_snapshots`, `session_labels`.
-
-## Database Backbone
-
-- The stack now ships with a TimescaleDB/Postgres container (`db` service in `docker-compose.yml`).
+- The stack ships with a TimescaleDB/Postgres container (`db` service in `docker-compose.yml`).
 - Default credentials live in `.env.example` (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DATABASE_URL`). Copy the template to `.env` and adjust as needed before starting containers.
 - After bringing the compose stack up, run the schema bootstrap once:
   ```
   docker compose run --rm api python -m app.db.migrate
   ```
 - Hypertables created: `ticks`, `bars_1m`, plus relational tables for `features`, `signals`, `orders`, `fills`, `account_snapshots`, and `session_labels`.
+
+## Polygon Websocket Streamer
+
+- Service `streamer` connects to Polygon’s stocks websocket and ingests per-second aggregates for `POLYGON_WS_SYMBOLS` (default: SPX, NDX, SPY, QQQ).
+- Configure the streamer in `.env` via `POLYGON_WS_URL`, `POLYGON_WS_SYMBOLS`, `POLYGON_WS_BATCH`, `POLYGON_WS_FLUSH_INTERVAL`, and supply `POLYGON_WS_KEY` (or reuse `POLYGON_API_KEY`).
+- Ticks are upserted into the `ticks` hypertable, forming the real-time backbone for the SPX/NDX scalper.
 
 Components
 - `api`: FastAPI service with health, provider checks, dry-run order endpoint, and Prometheus metrics.
